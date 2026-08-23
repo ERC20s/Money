@@ -17,6 +17,7 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     event Bought(address indexed buyer, uint256 weiAmount, uint256 tokenAmount, uint256 rate);
     event WithdrawalQueued(uint256 amount, uint256 executeAfter);
     event WithdrawalExecuted(uint256 amount);
+    event WithdrawalCancelled(uint256 amount);
 
     constructor() ERC20("Money", "MNY") {
         // initial supply 0, owner is deployer
@@ -66,6 +67,18 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         require(ok, "Transfer failed");
 
         emit WithdrawalExecuted(amount);
+    }
+
+    /// @notice Allow owner to cancel a previously queued withdrawal.
+    /// Not restricted by whenNotPaused so owner can cancel in emergencies.
+    function cancelQueuedWithdrawal() external onlyOwner {
+        require(queuedAmount > 0, "No queued withdrawal");
+
+        uint256 amount = queuedAmount;
+        queuedAmount = 0;
+        queuedExecuteTime = 0;
+
+        emit WithdrawalCancelled(amount);
     }
 
     /// @notice Pause buys and withdrawal operations.
