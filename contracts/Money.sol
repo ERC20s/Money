@@ -72,6 +72,28 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         emit Bought(msg.sender, msg.value, tokenAmount, rate);
     }
 
+    /// @notice Preview the result of buy() for a given weiAmount without mutating state and without reverting.
+    /// Returns (tokenAmount, wouldSucceed) where wouldSucceed reflects whether buy() would not revert
+    /// under current contract state for the same weiAmount.
+    function previewBuy(uint256 weiAmount) external view returns (uint256 tokenAmount, bool wouldSucceed) {
+        // tokenAmount = weiAmount * rate * 10**decimals / 1 ether
+        uint256 tokenDecimalsFactor = 10 ** uint256(decimals());
+
+        // conservative guard copied from buy()
+        uint256 maxMsgValue = type(uint256).max / MAX_RATE / tokenDecimalsFactor;
+
+        // Default tokenAmount to 0 to ensure this view never reverts for any weiAmount.
+        tokenAmount = 0;
+
+        // Only compute tokenAmount when the conservative overflow guard would allow the multiplication
+        if (weiAmount > 0 && rate > 0 && weiAmount <= maxMsgValue) {
+            tokenAmount = (weiAmount * rate * tokenDecimalsFactor) / 1 ether;
+        }
+
+        // Would succeed iff all buy() requires would pass, including tokenAmount > 0
+        wouldSucceed = (rate > 0) && (weiAmount > 0) && (weiAmount <= maxMsgValue) && (tokenAmount > 0);
+    }
+
     /// @notice Owner queues a withdrawal of ETH from contract. Needs executeWithdrawal after 48h.
     function queueWithdrawal(uint256 amount) external onlyOwner whenNotPaused {
         require(amount > 0, "Amount must be >0");

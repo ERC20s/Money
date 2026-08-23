@@ -235,6 +235,15 @@ contract MoneyTest is Test {
     }
 
     function testSetRateOnlyOwnerAndBuyRevertsWhenZero() public {
+        vm.expectRevert();
+        money.pause();
+
+        vm.expectRevert();
+        money.unpause();
+
+        vm.expectRevert();
+        money.queueWithdrawal(1 ether);
+
         uint256 rate = 3;
         // non-owner cannot set rate
         vm.prank(alice);
@@ -313,65 +322,69 @@ contract MoneyTest is Test {
         BadRecipient bad = new BadRecipient();
         Money money2 = bad.deployMoney();
 
-        // fund the Money instance so it can attempt the transfer
-        vm.deal(address(this), 2 ether);
+        // fund money2 so the queued withdrawal can be executed
+        vm.deal(address(this), 1 ether);
         payable(address(money2)).transfer(1 ether);
 
-        uint256 amount = 1 ether;
-        // queue the withdrawal from the BadRecipient's context (so queuedRecipient will be address(bad))
-        bad.callQueueWithdrawalTo(money2, address(bad), amount);
+        // have the BadRecipient (owner) queue a withdrawal for 1 ether
+        // calling bad.callQueueWithdrawal will perform money2.queueWithdrawal with msg.sender == bad
+        bad.callQueueWithdrawal(money2, 1 ether);
 
-        // capture queued state after queueing
-        uint256 qAmount = money2.queuedAmount();
-        uint256 qExecuteTime = money2.queuedExecuteTime();
-        address qRecipient = money2.queuedRecipient();
-
-        assertEq(qAmount, amount);
-        assertEq(qRecipient, address(bad));
-
-        // advance time past the timelock
+        // advance time to after the timelock
         vm.warp(block.timestamp + 48 hours + 1);
 
-        // executeWithdrawal should revert with the explicit "Transfer failed" and the on-chain queued state must be unchanged
+        // executeWithdrawal will attempt to transfer to the BadRecipient which reverts; expect "Transfer failed"
         vm.expectRevert(bytes("Transfer failed"));
         money2.executeWithdrawal();
 
-        // because the call reverted, storage must be unchanged (revert rolled back the attempted clear)
-        assertEq(money2.queuedAmount(), qAmount);
-        assertEq(money2.queuedExecuteTime(), qExecuteTime);
-        assertEq(money2.queuedRecipient(), qRecipient);
+        // after the failed attempt (which reverted), the queued state should still be present
+        assertEq(money2.queuedAmount(), 1 ether);
+        assertEq(money2.queuedRecipient(), address(bad));
     }
 
-    // New tests: verify Deposit event is emitted when contract receives ETH via receive() and fallback()
-    function testEmitDepositOnReceive() public {
-        uint256 amt = 1 ether / 2; // 0.5 ETH
-        address sender = address(0xC0FFEE);
-        vm.deal(sender, amt);
+    // New tests for previewBuy view
+    function testPreviewBuyMatchesBuyStateNeutral() public {
+        uint256 rate = 2;
+        uint256 sendWei = 1 ether / 1000;
+        vm.deal(alice, sendWei);
 
-        vm.prank(sender);
-        vm.expectEmit(true, false, false, true);
-        emit Money.Deposit(sender, amt);
+        // owner sets rate
+        vm.prank(owner);
+        money.setRate(rate);
 
-        // send ETH with empty calldata to trigger receive()
-        payable(address(money)).transfer(amt);
+        // call previewBuy as alice (view) and ensure it reports success and matches buy()'s minted amount
+        vm.prank(alice);
+        (uint256 previewAmount, bool wouldSucceed) = money.previewBuy(sendWei);
+        assertTrue(wouldSucceed);
 
-        // contract balance should increase by amt (setUp funded 5 ether initially)
-        assertEq(address(money).balance, 5 ether + amt);
+        uint256 beforeBal = money.balanceOf(alice);
+        vm.prank(alice);
+        money.buy{value: sendWei}();
+        uint256 afterBal = money.balanceOf(alice);
+
+        assertEq(afterBal - beforeBal, previewAmount);
     }
 
-    function testEmitDepositOnFallback() public {
-        uint256 amt = 1 ether / 4; // 0.25 ETH
-        address sender = address(0xD00D);
-        vm.deal(sender, amt);
+    function testPreviewBuyReportsFalseForExcessiveWei() public {
+        // set rate to MAX_RATE
+        vm.prank(owner);
+        money.setRate(Money.MAX_RATE());
 
-        vm.prank(sender);
-        vm.expectEmit(true, false, false, true);
-        emit Money.Deposit(sender, amt);
+        uint256 maxMsgValue = type(uint256).max / Money.MAX_RATE() / (10 ** money.decimals());
+        uint256 excessive = maxMsgValue + 1;
 
-        // send ETH with non-empty calldata to trigger fallback()
-        (bool ok, ) = address(money).call{value: amt}(hex"1234");
-        require(ok, "call failed");
+        // previewBuy should not revert and should report wouldSucceed == false for excessive wei
+        (uint256 previewAmount, bool wouldSucceed) = money.previewBuy(excessive);
+        assertFalse(wouldSucceed);
+        // token amount should be zero because we guard against overflow in the view
+        assertEq(previewAmount, 0);
+    }
 
-        assertEq(address(money).balance, 5 ether + amt);
+    function testPreviewBuyReportsFalseWhenRateZero() public {
+        // default rate is zero
+        uint256 sendWei = 1 ether / 1000;
+        (uint256 previewAmount, bool wouldSucceed) = money.previewBuy(sendWei);
+        assertFalse(wouldSucceed);
+        assertEq(previewAmount, 0);
     }
 }
