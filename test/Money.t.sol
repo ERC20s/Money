@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../contracts/Money.sol";
 
 contract SimpleERC20 is ERC20 {
@@ -12,6 +13,22 @@ contract SimpleERC20 is ERC20 {
 
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
+    }
+}
+
+// Non-standard ERC20 that does not return bool on transfer
+contract NonStandardERC20 is ERC20 {
+    constructor(string memory name, string memory symbol) ERC20(name, symbol) {
+        _mint(msg.sender, 0);
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    // override transfer to not return a value
+    function transfer(address to, uint256 amount) public {
+        _transfer(msg.sender, to, amount);
     }
 }
 
@@ -147,5 +164,20 @@ contract MoneyTest is Test {
         vm.prank(owner);
         vm.expectRevert(bytes("Cannot sweep Money token"));
         money.rescueERC20(IERC20(address(money)), owner, 1);
+    }
+
+    function testRescueNonStandardERC20Successful() public {
+        NonStandardERC20 token = new NonStandardERC20("NST", "NST");
+        token.mint(address(money), 500);
+
+        // owner rescues tokens to owner address (non-standard token without bool return)
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, true);
+        emit Money.ERC20Rescued(address(token), owner, 500);
+        vm.prank(owner);
+        money.rescueERC20(IERC20(address(token)), owner, 500);
+
+        assertEq(token.balanceOf(owner), 500);
+        assertEq(token.balanceOf(address(money)), 0);
     }
 }
