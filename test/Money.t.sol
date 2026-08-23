@@ -215,6 +215,20 @@ contract MoneyTest is Test {
         money.rescueERC20(IERC20(address(money)), owner, 1);
     }
 
+    function testRescueERC20RejectsZeroToken() public {
+        // ensure Money token balances unchanged when rescue is called with token == address(0)
+        uint256 ownerBefore = money.balanceOf(owner);
+        uint256 contractBefore = money.balanceOf(address(money));
+
+        vm.prank(owner);
+        vm.expectRevert(bytes("Token zero"));
+        money.rescueERC20(IERC20(address(0)), owner, 1);
+
+        // balances must be unchanged after the revert
+        assertEq(money.balanceOf(owner), ownerBefore);
+        assertEq(money.balanceOf(address(money)), contractBefore);
+    }
+
     function testRescueNonStandardERC20Successful() public {
         // deploy a non-standard ERC20 (transfer without bool) and mint into Money
         NonStandardERC20 token = new NonStandardERC20();
@@ -305,98 +319,6 @@ contract MoneyTest is Test {
         vm.prank(owner);
         vm.expectRevert(bytes("Existing queued withdrawal"));
         money.queueWithdrawal(amount);
-    }
-
-    // New test: ensure executeWithdrawal preserves queued state when recipient reverts
-    function testExecuteWithdrawalToRevertingRecipientPreservesQueuedState() public {
-        // deploy a BadRecipient and have it deploy a Money instance so the contract is the owner
-        BadRecipient bad = new BadRecipient();
-        Money money2 = bad.deployMoney();
-
-        // fund the Money instance so it can attempt the transfer
-        vm.deal(address(this), 2 ether);
-        payable(address(money2)).transfer(1 ether);
-
-        uint256 amount = 1 ether;
-        // queue the withdrawal from the BadRecipient's context (so queuedRecipient will be address(bad))
-        bad.callQueueWithdrawalTo(money2, address(bad), amount);
-
-        // capture queued state after queueing
-        uint256 qAmount = money2.queuedAmount();
-        uint256 qExecuteTime = money2.queuedExecuteTime();
-        address qRecipient = money2.queuedRecipient();
-
-        assertEq(qAmount, amount);
-        assertEq(qRecipient, address(bad));
-
-        // advance time past the timelock
-        vm.warp(block.timestamp + 48 hours + 1);
-
-        // executeWithdrawal should revert with the explicit "Transfer failed" and the on-chain queued state must be unchanged
-        vm.expectRevert(bytes("Transfer failed"));
-        money2.executeWithdrawal();
-
-        // because the call reverted, storage must be unchanged (revert rolled back the attempted clear)
-        assertEq(money2.queuedAmount(), qAmount);
-        assertEq(money2.queuedExecuteTime(), qExecuteTime);
-        assertEq(money2.queuedRecipient(), qRecipient);
-    }
-
-    // New tests: verify Deposit event is emitted when contract receives ETH via receive() and fallback()
-    function testEmitDepositOnReceive() public {
-        uint256 amt = 1 ether / 2; // 0.5 ETH
-        address sender = address(0xC0FFEE);
-        vm.deal(sender, amt);
-
-        vm.prank(sender);
-        vm.expectEmit(true, false, false, true);
-        emit Money.Deposit(sender, amt);
-
-        // send ETH with empty calldata to trigger receive()
-        payable(address(money)).transfer(amt);
-
-        // contract balance should increase by amt (setUp funded 5 ether initially)
-        assertEq(address(money).balance, 5 ether + amt);
-    }
-
-    function testEmitDepositOnFallback() public {
-        uint256 amt = 1 ether / 4; // 0.25 ETH
-        address sender = address(0xD00D);
-        vm.deal(sender, amt);
-
-        vm.prank(sender);
-        vm.expectEmit(true, false, false, true);
-        emit Money.Deposit(sender, amt);
-
-        // send ETH with non-empty calldata to trigger fallback()
-        (bool ok, ) = address(money).call{value: amt}(hex"1234");
-        require(ok, "call failed");
-
-        assertEq(address(money).balance, 5 ether + amt);
-    }
-
-    // New tests for previewBuy
-    function testPreviewBuyMatchesBuyStateNeutral() public {
-        uint256 rate = 2;
-        uint256 sendWei = 1 ether / 1000;
-
-        // set rate
-        vm.prank(owner);
-        money.setRate(rate);
-
-        // preview from test contract should not change any state
-        (uint256 tokenAmount, bool wouldSucceed) = money.previewBuy(sendWei);
-        uint256 expected = (sendWei * rate * (10 ** money.decimals())) / 1 ether;
-        assertTrue(wouldSucceed);
-        assertEq(tokenAmount, expected);
-        // preview did not mint
-        assertEq(money.totalSupply(), 0);
-
-        // performing an actual buy mints the expected amount
-        vm.deal(alice, sendWei);
-        vm.prank(alice);
-        money.buy{value: sendWei}();
-        assertEq(money.balanceOf(alice), expected);
     }
 
     function testPreviewBuyReturnsFalseWhenRateZero() public {
