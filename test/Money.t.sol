@@ -263,4 +263,22 @@ contract MoneyTest is Test {
         vm.expectRevert(bytes("Existing queued withdrawal"));
         money.queueWithdrawal(amount);
     }
+
+    // New test added by proposal: buy reverts on excessively large wei when rate is high
+    function testBuyRevertsOnExcessiveWei() public {
+        // set rate to MAX_RATE
+        vm.prank(owner);
+        money.setRate(Money.MAX_RATE());
+
+        // compute a huge value that would overflow the intermediate multiplication
+        uint256 tokenDecimalsFactor = 10 ** money.decimals();
+        uint256 maxMsgValue = type(uint256).max / Money.MAX_RATE() / tokenDecimalsFactor;
+
+        // attempt with msg.value = maxMsgValue + 1 should revert with our explicit message
+        uint256 sendWei = maxMsgValue + 1;
+        vm.deal(alice, sendWei);
+        vm.prank(alice);
+        vm.expectRevert(bytes("msg.value too large"));
+        money.buy{value: sendWei}();
+    }
 }
