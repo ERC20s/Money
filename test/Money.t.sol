@@ -39,6 +39,27 @@ contract NonStandardERC20 {
     }
 }
 
+// BadRecipient is a helper contract that rejects incoming ETH to simulate a reverting recipient.
+contract BadRecipient {
+    // revert on any ETH transfer
+    receive() external payable {
+        revert("bad recipient");
+    }
+    fallback() external payable {
+        revert("bad recipient");
+    }
+
+    // deploy a Money contract so that this contract becomes the owner
+    function deployMoney() public returns (Money) {
+        return new Money();
+    }
+
+    // call queueWithdrawal on the Money contract from this contract's context
+    function callQueueWithdrawal(Money money, uint256 amount) public {
+        money.queueWithdrawal(amount);
+    }
+}
+
 contract MoneyTest is Test {
     Money money;
     address owner = address(0xABCD);
@@ -279,5 +300,40 @@ contract MoneyTest is Test {
         vm.prank(owner);
         vm.expectRevert(bytes("Existing queued withdrawal"));
         money.queueWithdrawal(amount);
+    }
+
+    // New test: ensure executeWithdrawal preserves queued state when recipient reverts
+    function testExecuteWithdrawalToRevertingRecipientPreservesQueuedState() public {
+        // deploy a BadRecipient and have it deploy a Money instance so the contract is the owner
+        BadRecipient bad = new BadRecipient();
+        Money money2 = bad.deployMoney();
+
+        // fund the Money instance so it can attempt the transfer
+        vm.deal(address(this), 2 ether);
+        payable(address(money2)).transfer(1 ether);
+
+        uint256 amount = 1 ether;
+        // queue the withdrawal from the BadRecipient's context (so queuedRecipient will be address(bad))
+        bad.callQueueWithdrawal(money2, amount);
+
+        // capture queued state after queueing
+        uint256 qAmount = money2.queuedAmount();
+        uint256 qExecuteTime = money2.queuedExecuteTime();
+        address qRecipient = money2.queuedRecipient();
+
+        assertEq(qAmount, amount);
+        assertEq(qRecipient, address(bad));
+
+        // advance time past the timelock
+        vm.warp(block.timestamp + 48 hours + 1);
+
+        // executeWithdrawal should revert with the explicit "Transfer failed" and the on-chain queued state must be unchanged
+        vm.expectRevert(bytes("Transfer failed"));
+        money2.executeWithdrawal();
+
+        // because the call reverted, storage must be unchanged (revert rolled back the attempted clear)
+        assertEq(money2.queuedAmount(), qAmount);
+        assertEq(money2.queuedExecuteTime(), qExecuteTime);
+        assertEq(money2.queuedRecipient(), qRecipient);
     }
 }
