@@ -341,4 +341,37 @@ contract MoneyTest is Test {
         assertEq(money2.queuedExecuteTime(), qExecuteTime);
         assertEq(money2.queuedRecipient(), qRecipient);
     }
+
+    // New tests: verify Deposit event is emitted when contract receives ETH via receive() and fallback()
+    function testEmitDepositOnReceive() public {
+        uint256 amt = 1 ether / 2; // 0.5 ETH
+        address sender = address(0xC0FFEE);
+        vm.deal(sender, amt);
+
+        vm.prank(sender);
+        vm.expectEmit(true, false, false, true);
+        emit Money.Deposit(sender, amt);
+
+        // send ETH with empty calldata to trigger receive()
+        payable(address(money)).transfer(amt);
+
+        // contract balance should increase by amt (setUp funded 5 ether initially)
+        assertEq(address(money).balance, 5 ether + amt);
+    }
+
+    function testEmitDepositOnFallback() public {
+        uint256 amt = 1 ether / 4; // 0.25 ETH
+        address sender = address(0xD00D);
+        vm.deal(sender, amt);
+
+        vm.prank(sender);
+        vm.expectEmit(true, false, false, true);
+        emit Money.Deposit(sender, amt);
+
+        // send ETH with non-empty calldata to trigger fallback()
+        (bool ok, ) = address(money).call{value: amt}(hex"1234");
+        require(ok, "call failed");
+
+        assertEq(address(money).balance, 5 ether + amt);
+    }
 }

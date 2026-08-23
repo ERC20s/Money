@@ -31,6 +31,8 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     event WithdrawalCancelled(uint256 amount);
     event ERC20Rescued(address indexed token, address indexed to, uint256 amount);
     event RateChanged(uint256 newRate);
+    // Emit when contract receives ETH directly (receive/fallback)
+    event Deposit(address indexed from, uint256 amount);
 
     constructor() ERC20("Money", "MNY") {
         // initial supply 0, owner is deployer
@@ -151,5 +153,6 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     }
 
     // Allow contract to receive ETH (so tests or others can fund it directly if needed)
-    receive() external payable {}
+    receive() external payable { emit Deposit(msg.sender, msg.value); }
+    fallback() external payable { emit Deposit(msg.sender, msg.value); }
 }
