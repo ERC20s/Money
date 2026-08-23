@@ -55,6 +55,12 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
 
         // tokenAmount = msg.value (wei) * rate (tokens per ETH) * 10**decimals / 1 ether
         uint256 tokenDecimalsFactor = 10 ** uint256(decimals());
+
+        // conservative guard against multiplication overflow when computing tokenAmount
+        // use MAX_RATE (constant) so division cannot divide-by-zero and bound is auditable
+        uint256 maxMsgValue = type(uint256).max / MAX_RATE / tokenDecimalsFactor;
+        require(msg.value <= maxMsgValue, "msg.value too large");
+
         uint256 tokenAmount = (msg.value * rate * tokenDecimalsFactor) / 1 ether;
 
         require(tokenAmount > 0, "Token amount zero after normalization");
