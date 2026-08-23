@@ -313,10 +313,10 @@ contract MoneyTest is Test {
         payable(address(money2)).transfer(1 ether);
 
         uint256 amount = 1 ether;
-        // queue the withdrawal from the BadRecipient's context (so queuedRecipient will be address(bad))
-        bad.callQueueWithdrawal(money2, amount);
+        // queue the 
+        vm.prank(address(bad));
+        money2.callQueueWithdrawal(money2, amount);
 
-        // capture queued state after queueing
         uint256 qAmount = money2.queuedAmount();
         uint256 qExecuteTime = money2.queuedExecuteTime();
         address qRecipient = money2.queuedRecipient();

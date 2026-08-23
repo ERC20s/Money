@@ -82,6 +82,20 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         emit WithdrawalQueued(amount, queuedExecuteTime);
     }
 
+    /// @notice Owner queues a withdrawal of ETH from contract to a specified recipient. Needs executeWithdrawal after 48h.
+    function queueWithdrawalTo(address recipient, uint256 amount) external onlyOwner whenNotPaused {
+        require(recipient != address(0), "Recipient != 0");
+        require(amount > 0, "Amount must be >0");
+        require(amount <= address(this).balance, "Not enough balance");
+        // Prevent silently overwriting an existing queued withdrawal.
+        require(queuedAmount == 0, "Existing queued withdrawal");
+
+        queuedAmount = amount;
+        queuedExecuteTime = block.timestamp + TIMELOCK;
+        queuedRecipient = recipient;
+        emit WithdrawalQueued(amount, queuedExecuteTime);
+    }
+
     /// @notice Execute a queued withdrawal after the 48h timelock. Callable by anyone once timelock has expired.
     function executeWithdrawal() external nonReentrant whenNotPaused {
         require(queuedAmount > 0, "No queued withdrawal");
