@@ -208,6 +208,20 @@ contract MoneyTest is Test {
         assertEq(token.balanceOf(address(money)), 0);
     }
 
+    function testRescueERC20RejectsZeroRecipient() public {
+        // deploy a simple ERC20 and mint tokens to the Money contract
+        SimpleERC20 token = new SimpleERC20("TKN", "TKN");
+        token.mint(address(money), 1000);
+
+        // owner attempts to rescue to zero address and should revert before any external transfer
+        vm.prank(owner);
+        vm.expectRevert(bytes("Recipient zero"));
+        money.rescueERC20(IERC20(address(token)), address(0), 1000);
+
+        // ensure tokens remain in the Money contract
+        assertEq(token.balanceOf(address(money)), 1000);
+    }
+
     function testRescueERC20CannotSweepMoney() public {
         // attempt to sweep the Money token should revert
         vm.prank(owner);
@@ -232,6 +246,20 @@ contract MoneyTest is Test {
         // since NonStandardERC20 exposes balanceOf, we can check
         assertEq(token.balanceOf(owner), 500);
         assertEq(token.balanceOf(address(money)), 0);
+    }
+
+    function testRescueNonStandardERC20RejectsZeroRecipient() public {
+        // deploy a non-standard ERC20 and mint into Money
+        NonStandardERC20 token = new NonStandardERC20();
+        token.mint(address(money), 500);
+
+        // owner attempts to rescue to zero address and should revert before any external transfer
+        vm.prank(owner);
+        vm.expectRevert(bytes("Recipient zero"));
+        money.rescueERC20(IERC20(address(token)), address(0), 500);
+
+        // ensure tokens remain in the Money contract
+        assertEq(token.balanceOf(address(money)), 500);
     }
 
     function testSetRateOnlyOwnerAndBuyRevertsWhenZero() public {
@@ -312,10 +340,6 @@ contract MoneyTest is Test {
         // deploy a BadRecipient and have it deploy a Money instance so the contract is the owner
         BadRecipient bad = new BadRecipient();
         Money money2 = bad.deployMoney();
-
-        // fund the Money instance so it can attempt the transfer
-        vm.deal(address(this), 2 ether);
-        payable(address(money2)).transfer(1 ether);
 
         uint256 amount = 1 ether;
         // queue the withdrawal from the BadRecipient's context (so queuedRecipient will be address(bad))
