@@ -19,6 +19,8 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     uint256 public queuedExecuteTime;
 
     // owner-set buy rate (token units per 1 ETH, in whole tokens)
+    // cap rate to prevent arithmetic overflow in buy()
+    uint256 public constant MAX_RATE = 1e12;
     uint256 public rate;
 
     event Bought(address indexed buyer, uint256 weiAmount, uint256 tokenAmount, uint256 rate);
@@ -39,7 +41,7 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
 
     /// @notice Set the buy rate (tokens per 1 ETH). Only owner can call.
     function setRate(uint256 newRate) external onlyOwner {
-        require(newRate > 0, "Rate must be >0");
+        require(newRate > 0 && newRate <= MAX_RATE, "Rate out of range");
         rate = newRate;
         emit RateChanged(newRate);
     }
