@@ -76,8 +76,8 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         emit WithdrawalQueued(amount, queuedExecuteTime);
     }
 
-    /// @notice Execute a queued withdrawal after the 48h timelock.
-    function executeWithdrawal() external onlyOwner nonReentrant whenNotPaused {
+    /// @notice Execute a queued withdrawal after the 48h timelock. Callable by anyone once timelock has expired.
+    function executeWithdrawal() external nonReentrant whenNotPaused {
         require(queuedAmount > 0, "No queued withdrawal");
         require(block.timestamp >= queuedExecuteTime, "Timelock not expired");
 
