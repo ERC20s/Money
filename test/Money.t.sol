@@ -221,4 +221,26 @@ contract MoneyTest is Test {
         money.buy{value: sendWei}();
         assertEq(money.balanceOf(alice), (sendWei * rate * (10 ** money.decimals())) / 1 ether);
     }
+
+    // New test: setting rate above MAX_RATE should revert
+    function testSetRateAboveMaxReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(bytes("Rate out of range"));
+        money.setRate(Money.MAX_RATE() + 1);
+    }
+
+    // Optional test: setting MAX_RATE succeeds and buy still works for a small msg.value
+    function testSetRateAtMaxAndBuy() public {
+        uint256 sendWei = 1 ether / 1000; // small amount so tokenAmount won't overflow
+        vm.deal(alice, sendWei);
+
+        vm.prank(owner);
+        money.setRate(Money.MAX_RATE());
+
+        vm.prank(alice);
+        money.buy{value: sendWei}();
+
+        uint256 expected = (sendWei * Money.MAX_RATE() * (10 ** money.decimals())) / 1 ether;
+        assertEq(money.balanceOf(alice), expected);
+    }
 }
