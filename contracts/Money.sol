@@ -66,6 +66,8 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     function queueWithdrawal(uint256 amount) external onlyOwner whenNotPaused {
         require(amount > 0, "Amount must be >0");
         require(amount <= address(this).balance, "Not enough balance");
+        // Prevent silently overwriting an existing queued withdrawal.
+        require(queuedAmount == 0, "Existing queued withdrawal");
 
         queuedAmount = amount;
         queuedExecuteTime = block.timestamp + TIMELOCK;
