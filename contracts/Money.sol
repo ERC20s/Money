@@ -24,7 +24,7 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     uint256 public constant MAX_RATE = 1e12;
     uint256 public rate;
 
-    event Bought(address indexed buyer, uint256 weiAmount, uint256 tokenAmount, uint256 rate);
+    event Bought(address indexed buyer, address indexed recipient, uint256 weiAmount, uint256 tokenAmount, uint256 rate);
     // include recipient in queued and executed withdrawal events for improved off-chain indexing
     event WithdrawalQueued(uint256 amount, uint256 executeAfter, address indexed recipient);
     event WithdrawalExecuted(uint256 amount, address indexed recipient);
@@ -69,7 +69,25 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         require(tokenAmount > 0, "Token amount zero after normalization");
 
         _mint(msg.sender, tokenAmount);
-        emit Bought(msg.sender, msg.value, tokenAmount, rate);
+        emit Bought(msg.sender, msg.sender, msg.value, tokenAmount, rate);
+    }
+
+    /// @notice Buy tokens for a recipient by sending ETH. Uses owner-set `rate` (token units per 1 ETH).
+    /// Allows third parties to purchase tokens for another address (gifts, integrations).
+    function buyFor(address recipient) external payable whenNotPaused nonReentrant {
+        require(recipient != address(0), "Recipient zero");
+        require(msg.value > 0, "Must send ETH to buy");
+        require(rate > 0, "Rate must be > 0");
+
+        uint256 tokenDecimalsFactor = 10 ** uint256(decimals());
+        uint256 maxMsgValue = type(uint256).max / MAX_RATE / tokenDecimalsFactor;
+        require(msg.value <= maxMsgValue, "msg.value too large");
+
+        uint256 tokenAmount = (msg.value * rate * tokenDecimalsFactor) / 1 ether;
+        require(tokenAmount > 0, "Token amount zero after normalization");
+
+        _mint(recipient, tokenAmount);
+        emit Bought(msg.sender, recipient, msg.value, tokenAmount, rate);
     }
 
     /// @notice Preview a buy without affecting state. Returns (tokenAmount, wouldSucceed).
