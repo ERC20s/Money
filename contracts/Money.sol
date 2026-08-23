@@ -166,6 +166,8 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner nonReentrant {
         require(address(token) != address(this), "Cannot sweep Money token");
         require(amount > 0, "Amount > 0");
+        // disallow sending rescued tokens to the zero address to avoid accidental burn
+        require(to != address(0), "Recipient zero");
 
         // use SafeERC20 to support tokens that do not return a bool on transfer
         token.safeTransfer(to, amount);
