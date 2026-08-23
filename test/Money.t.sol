@@ -252,6 +252,23 @@ contract MoneyTest is Test {
         assertEq(money.balanceOf(alice), expected);
     }
 
+    // New test: buy reverts when msg.value exceeds the conservative MAX_RATE-based guard
+    function testBuyRevertsOnExcessiveWei() public {
+        // set rate to MAX_RATE to exercise the conservative guard
+        vm.prank(owner);
+        money.setRate(Money.MAX_RATE());
+
+        uint256 maxMsgValue = type(uint256).max / Money.MAX_RATE() / (10 ** money.decimals());
+        uint256 excessive = maxMsgValue + 1;
+
+        // fund alice with the excessive amount
+        vm.deal(alice, excessive);
+
+        vm.prank(alice);
+        vm.expectRevert(bytes("msg.value too large"));
+        money.buy{value: excessive}();
+    }
+
     // New test: cannot overwrite an existing queued withdrawal
     function testCannotOverwriteQueuedWithdrawal() public {
         uint256 amount = 1 ether;
