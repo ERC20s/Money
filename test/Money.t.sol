@@ -58,6 +58,11 @@ contract BadRecipient {
     function callQueueWithdrawal(Money money, uint256 amount) public {
         money.queueWithdrawal(amount);
     }
+
+    // call queueWithdrawalTo on the Money contract from this contract's context
+    function callQueueWithdrawalTo(Money money, address recipient, uint256 amount) public {
+        money.queueWithdrawalTo(recipient, amount);
+    }
 }
 
 contract MoneyTest is Test {
@@ -314,7 +319,7 @@ contract MoneyTest is Test {
 
         uint256 amount = 1 ether;
         // queue the withdrawal from the BadRecipient's context (so queuedRecipient will be address(bad))
-        bad.callQueueWithdrawal(money2, amount);
+        bad.callQueueWithdrawalTo(money2, address(bad), amount);
 
         // capture queued state after queueing
         uint256 qAmount = money2.queuedAmount();
