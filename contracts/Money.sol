@@ -167,6 +167,9 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         require(address(token) != address(this), "Cannot sweep Money token");
         require(amount > 0, "Amount > 0");
 
+        // Ensure the contract actually holds at least `amount` of the token before attempting transfer.
+        require(token.balanceOf(address(this)) >= amount, "Not enough token balance");
+
         // use SafeERC20 to support tokens that do not return a bool on transfer
         token.safeTransfer(to, amount);
 
