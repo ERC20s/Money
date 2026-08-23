@@ -79,6 +79,9 @@ contract MoneyTest is Test {
         vm.prank(owner);
         money.queueWithdrawal(amount);
 
+        // queued recipient should be locked to the owner at queue time
+        assertEq(money.queuedRecipient(), owner);
+
         // cannot execute immediately
         vm.prank(owner);
         vm.expectRevert(bytes("Timelock not expired"));
@@ -91,6 +94,9 @@ contract MoneyTest is Test {
         vm.prank(owner);
         money.executeWithdrawal();
         assertGt(owner.balance, ownerBefore);
+
+        // queued recipient should be cleared after execution
+        assertEq(money.queuedRecipient(), address(0));
     }
 
     function testPauseBlocksBuyAndWithdraw() public {
@@ -151,6 +157,7 @@ contract MoneyTest is Test {
         // queued state should be cleared
         assertEq(money.queuedAmount(), 0);
         assertEq(money.queuedExecuteTime(), 0);
+        assertEq(money.queuedRecipient(), address(0));
 
         // execute should revert (generic) after cancellation
         vm.prank(owner);

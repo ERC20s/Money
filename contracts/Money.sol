@@ -17,6 +17,7 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     // queued withdrawal info
     uint256 public queuedAmount;
     uint256 public queuedExecuteTime;
+    address public queuedRecipient;
 
     // owner-set buy rate (token units per 1 ETH, in whole tokens)
     // cap rate to prevent arithmetic overflow in buy()
@@ -71,6 +72,7 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
 
         queuedAmount = amount;
         queuedExecuteTime = block.timestamp + TIMELOCK;
+        queuedRecipient = owner();
         emit WithdrawalQueued(amount, queuedExecuteTime);
     }
 
@@ -80,10 +82,14 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         require(block.timestamp >= queuedExecuteTime, "Timelock not expired");
 
         uint256 amount = queuedAmount;
+        address recipient = queuedRecipient;
+
+        // clear state before external call
         queuedAmount = 0;
         queuedExecuteTime = 0;
+        queuedRecipient = address(0);
 
-        (bool ok, ) = payable(owner()).call{value: amount}("");
+        (bool ok, ) = payable(recipient).call{value: amount}("");
         require(ok, "Transfer failed");
 
         emit WithdrawalExecuted(amount);
@@ -96,6 +102,7 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
 
         queuedAmount = 0;
         queuedExecuteTime = 0;
+        queuedRecipient = address(0);
 
         emit WithdrawalCancelled(amount);
     }
