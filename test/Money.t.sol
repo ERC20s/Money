@@ -374,4 +374,47 @@ contract MoneyTest is Test {
 
         assertEq(address(money).balance, 5 ether + amt);
     }
+
+    // New tests for previewBuy
+    function testPreviewBuyMatchesBuyStateNeutral() public {
+        uint256 rate = 2;
+        uint256 sendWei = 1 ether / 1000;
+
+        // set rate
+        vm.prank(owner);
+        money.setRate(rate);
+
+        // preview from test contract should not change any state
+        (uint256 tokenAmount, bool wouldSucceed) = money.previewBuy(sendWei);
+        uint256 expected = (sendWei * rate * (10 ** money.decimals())) / 1 ether;
+        assertTrue(wouldSucceed);
+        assertEq(tokenAmount, expected);
+        // preview did not mint
+        assertEq(money.totalSupply(), 0);
+
+        // performing an actual buy mints the expected amount
+        vm.deal(alice, sendWei);
+        vm.prank(alice);
+        money.buy{value: sendWei}();
+        assertEq(money.balanceOf(alice), expected);
+    }
+
+    function testPreviewBuyReturnsFalseWhenRateZero() public {
+        uint256 sendWei = 1 ether / 1000;
+        (uint256 tokenAmount, bool wouldSucceed) = money.previewBuy(sendWei);
+        assertFalse(wouldSucceed);
+        assertEq(tokenAmount, 0);
+    }
+
+    function testPreviewBuyReturnsFalseOnExcessiveWei() public {
+        vm.prank(owner);
+        money.setRate(Money.MAX_RATE());
+
+        uint256 maxMsgValue = type(uint256).max / Money.MAX_RATE() / (10 ** money.decimals());
+        uint256 excessive = maxMsgValue + 1;
+
+        (uint256 tokenAmount, bool wouldSucceed) = money.previewBuy(excessive);
+        assertFalse(wouldSucceed);
+        assertEq(tokenAmount, 0);
+    }
 }
