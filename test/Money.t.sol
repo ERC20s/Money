@@ -243,4 +243,16 @@ contract MoneyTest is Test {
         uint256 expected = (sendWei * Money.MAX_RATE() * (10 ** money.decimals())) / 1 ether;
         assertEq(money.balanceOf(alice), expected);
     }
+
+    // New test: cannot overwrite an existing queued withdrawal
+    function testCannotOverwriteQueuedWithdrawal() public {
+        uint256 amount = 1 ether;
+        vm.prank(owner);
+        money.queueWithdrawal(amount);
+
+        // attempting to queue another withdrawal should revert with the explicit message
+        vm.prank(owner);
+        vm.expectRevert(bytes("Existing queued withdrawal"));
+        money.queueWithdrawal(amount);
+    }
 }
