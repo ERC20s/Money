@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../contracts/Money.sol";
 
 contract SimpleERC20 is ERC20 {
@@ -12,6 +13,29 @@ contract SimpleERC20 is ERC20 {
 
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
+    }
+}
+
+// NonStandardERC20 simulates tokens that implement transfer without a return value.
+contract NonStandardERC20 {
+    string public name = "NST";
+    string public symbol = "NST";
+    uint8 public decimals = 18;
+    mapping(address => uint256) public balanceOf;
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+        emit Transfer(address(0), to, amount);
+    }
+
+    // transfer that does NOT return a bool
+    function transfer(address to, uint256 amount) external {
+        require(balanceOf[msg.sender] >= amount, "Insufficient");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        emit Transfer(msg.sender, to, amount);
     }
 }
 
@@ -147,5 +171,24 @@ contract MoneyTest is Test {
         vm.prank(owner);
         vm.expectRevert(bytes("Cannot sweep Money token"));
         money.rescueERC20(IERC20(address(money)), owner, 1);
+    }
+
+    function testRescueNonStandardERC20Successful() public {
+        // deploy a non-standard ERC20 (transfer without bool) and mint into Money
+        NonStandardERC20 token = new NonStandardERC20();
+        token.mint(address(money), 500);
+
+        // owner rescues tokens
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, true);
+        emit Money.ERC20Rescued(address(token), owner, 500);
+        vm.prank(owner);
+        // note: Money.rescueERC20 accepts IERC20, but SafeERC20 operates on the interface; calling with this contract address works
+        money.rescueERC20(IERC20(address(token)), owner, 500);
+
+        // verify balances on the non-standard token
+        // since NonStandardERC20 exposes balanceOf, we can check
+        assertEq(token.balanceOf(owner), 500);
+        assertEq(token.balanceOf(address(money)), 0);
     }
 }

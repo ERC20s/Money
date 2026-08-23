@@ -3,12 +3,15 @@ pragma solidity ^0.8.13;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /// @notice Minimal Money ERC20 with payable buy(), 48h timelock on owner withdrawals, and pause.
 contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     uint256 public constant TIMELOCK = 48 hours;
 
     // queued withdrawal info
@@ -98,8 +101,8 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         require(address(token) != address(this), "Cannot sweep Money token");
         require(amount > 0, "Amount > 0");
 
-        bool ok = token.transfer(to, amount);
-        require(ok, "ERC20 transfer failed");
+        // use SafeERC20 to support tokens that do not return a bool on transfer
+        token.safeTransfer(to, amount);
 
         emit ERC20Rescued(address(token), to, amount);
     }
