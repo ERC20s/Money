@@ -58,8 +58,12 @@ contract MoneyTest is Test {
         uint256 sendWei = 1 ether / 1000; // 0.001 ETH
         vm.deal(alice, sendWei);
 
+        // owner sets rate
+        vm.prank(owner);
+        money.setRate(rate);
+
         vm.prank(alice);
-        money.buy{value: sendWei}(rate);
+        money.buy{value: sendWei}();
 
         // token amount should be: wei * rate * 10**decimals / 1 ether
         uint256 expected = (sendWei * rate * (10 ** money.decimals())) / 1 ether;
@@ -100,7 +104,7 @@ contract MoneyTest is Test {
 
         vm.prank(alice);
         vm.expectRevert();
-        money.buy{value: sendWei}(rate);
+        money.buy{value: sendWei}();
 
         vm.prank(owner);
         vm.expectRevert();
@@ -110,8 +114,12 @@ contract MoneyTest is Test {
         vm.prank(owner);
         money.unpause();
 
+        // owner sets rate
+        vm.prank(owner);
+        money.setRate(rate);
+
         vm.prank(alice);
-        money.buy{value: sendWei}(rate);
+        money.buy{value: sendWei}();
         assertEq(money.balanceOf(alice), (sendWei * rate * (10 ** money.decimals())) / 1 ether);
     }
 
@@ -190,5 +198,27 @@ contract MoneyTest is Test {
         // since NonStandardERC20 exposes balanceOf, we can check
         assertEq(token.balanceOf(owner), 500);
         assertEq(token.balanceOf(address(money)), 0);
+    }
+
+    function testSetRateOnlyOwnerAndBuyRevertsWhenZero() public {
+        uint256 rate = 3;
+        // non-owner cannot set rate
+        vm.prank(alice);
+        vm.expectRevert();
+        money.setRate(rate);
+
+        // buy reverts when rate is zero
+        uint256 sendWei = 1 ether / 1000;
+        vm.deal(alice, sendWei);
+        vm.prank(alice);
+        vm.expectRevert(bytes("Rate must be > 0"));
+        money.buy{value: sendWei}();
+
+        // owner sets a valid rate and buy succeeds
+        vm.prank(owner);
+        money.setRate(rate);
+        vm.prank(alice);
+        money.buy{value: sendWei}();
+        assertEq(money.balanceOf(alice), (sendWei * rate * (10 ** money.decimals())) / 1 ether);
     }
 }

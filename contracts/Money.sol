@@ -18,11 +18,15 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     uint256 public queuedAmount;
     uint256 public queuedExecuteTime;
 
+    // owner-set buy rate (token units per 1 ETH, in whole tokens)
+    uint256 public rate;
+
     event Bought(address indexed buyer, uint256 weiAmount, uint256 tokenAmount, uint256 rate);
     event WithdrawalQueued(uint256 amount, uint256 executeAfter);
     event WithdrawalExecuted(uint256 amount);
     event WithdrawalCancelled(uint256 amount);
     event ERC20Rescued(address indexed token, address indexed to, uint256 amount);
+    event RateChanged(uint256 newRate);
 
     constructor() ERC20("Money", "MNY") {
         // initial supply 0, owner is deployer
@@ -33,9 +37,16 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         return 6;
     }
 
-    /// @notice Buy tokens by sending ETH. `rate` is token units per 1 ETH (in whole tokens).
+    /// @notice Set the buy rate (tokens per 1 ETH). Only owner can call.
+    function setRate(uint256 newRate) external onlyOwner {
+        require(newRate > 0, "Rate must be >0");
+        rate = newRate;
+        emit RateChanged(newRate);
+    }
+
+    /// @notice Buy tokens by sending ETH. Uses owner-set `rate` (token units per 1 ETH).
     /// For example, rate==1 mints 1 token * (10**decimals) per 1 ETH.
-    function buy(uint256 rate) external payable whenNotPaused nonReentrant {
+    function buy() external payable whenNotPaused nonReentrant {
         require(msg.value > 0, "Must send ETH to buy");
         require(rate > 0, "Rate must be > 0");
 
