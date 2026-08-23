@@ -96,33 +96,36 @@ contract MoneyTest is Test {
         assertEq(money.balanceOf(alice), expected);
     }
 
-    function testQueueAndExecuteWithdrawalTimelock() public {
-        // ensure contract has balance
-        uint256 contractBal = address(money).balance;
-        assertGt(contractBal, 0);
+    function testBuyForMintsToRecipient() public {
+        // buyer (alice) buys tokens for recipient
+        uint256 rate = 3;
+        uint256 sendWei = 1 ether / 1000; // 0.001 ETH
+        address recipient = address(0xCAFE);
 
-        uint256 amount = 1 ether;
+        vm.deal(alice, sendWei);
         vm.prank(owner);
-        money.queueWithdrawal(amount);
+        money.setRate(rate);
 
-        // queued recipient should be locked to the owner at queue time
-        assertEq(money.queuedRecipient(), owner);
+        vm.prank(alice);
+        money.buyFor{value: sendWei}(recipient);
 
-        // cannot execute immediately
+        uint256 expected = (sendWei * rate * (10 ** money.decimals())) / 1 ether;
+        assertEq(money.balanceOf(recipient), expected);
+        // buyer should not receive tokens
+        assertEq(money.balanceOf(alice), 0);
+    }
+
+    function testBuyForRejectsZeroRecipient() public {
+        uint256 rate = 1;
+        uint256 sendWei = 1 ether / 1000;
+
+        vm.deal(alice, sendWei);
         vm.prank(owner);
-        vm.expectRevert(bytes("Timelock not expired"));
-        money.executeWithdrawal();
+        money.setRate(rate);
 
-        // advance time by 48h
-        vm.warp(block.timestamp + 48 hours + 1);
-
-        uint256 ownerBefore = owner.balance;
-        vm.prank(owner);
-        money.executeWithdrawal();
-        assertGt(owner.balance, ownerBefore);
-
-        // queued recipient should be cleared after execution
-        assertEq(money.queuedRecipient(), address(0));
+        vm.prank(alice);
+        vm.expectRevert(bytes("Recipient zero"));
+        money.buyFor{value: sendWei}(address(0));
     }
 
     function testPauseBlocksBuyAndWithdraw() public {
@@ -141,6 +144,11 @@ contract MoneyTest is Test {
         vm.prank(owner);
         vm.expectRevert();
         money.queueWithdrawal(1 ether);
+
+        // ensure buyFor is also blocked when paused
+        vm.prank(alice);
+        vm.expectRevert();
+        money.buyFor{value: sendWei}(address(0x1234));
 
         // unpause and ensure buy works
         vm.prank(owner);

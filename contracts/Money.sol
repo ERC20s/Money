@@ -72,6 +72,25 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         emit Bought(msg.sender, msg.value, tokenAmount, rate);
     }
 
+    /// @notice Buy tokens for a specified recipient by sending ETH. Mirrors buy() but mints to `recipient`.
+    function buyFor(address recipient) external payable whenNotPaused nonReentrant {
+        require(recipient != address(0), "Recipient zero");
+        require(msg.value > 0, "Must send ETH to buy");
+        require(rate > 0, "Rate must be > 0");
+
+        uint256 tokenDecimalsFactor = 10 ** uint256(decimals());
+
+        uint256 maxMsgValue = type(uint256).max / MAX_RATE / tokenDecimalsFactor;
+        require(msg.value <= maxMsgValue, "msg.value too large");
+
+        uint256 tokenAmount = (msg.value * rate * tokenDecimalsFactor) / 1 ether;
+
+        require(tokenAmount > 0, "Token amount zero after normalization");
+
+        _mint(recipient, tokenAmount);
+        emit Bought(msg.sender, msg.value, tokenAmount, rate);
+    }
+
     /// @notice Preview a buy without affecting state. Returns (tokenAmount, wouldSucceed).
     /// Implementation mirrors buy() but checks the conservative maxMsgValue bound before any
     /// multiplication so the view never overflows or reverts for extreme inputs.
