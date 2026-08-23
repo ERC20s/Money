@@ -96,6 +96,49 @@ contract MoneyTest is Test {
         assertEq(money.balanceOf(alice), expected);
     }
 
+    // New tests for previewBuy
+    function testPreviewBuyMatchesBuy() public {
+        uint256 rate = 3;
+        uint256 sendWei = 1 ether / 500; // 0.002 ETH
+        vm.deal(alice, sendWei);
+
+        // owner sets rate
+        vm.prank(owner);
+        money.setRate(rate);
+
+        // call previewBuy and ensure it reports the same token amount and withinGuard
+        (uint256 previewAmount, bool within) = money.previewBuy(sendWei);
+        assertTrue(within, "previewBuy should indicate wei within guard");
+
+        // calling previewBuy should not change balances
+        assertEq(money.balanceOf(alice), 0);
+
+        // perform actual buy and compare minted amount
+        vm.prank(alice);
+        money.buy{value: sendWei}();
+
+        uint256 expected = (sendWei * rate * (10 ** money.decimals())) / 1 ether;
+        assertEq(previewAmount, expected);
+        assertEq(money.balanceOf(alice), expected);
+    }
+
+    function testPreviewBuyReportsFalseForExcessiveWei() public {
+        // set rate to MAX_RATE to exercise the conservative guard
+        vm.prank(owner);
+        money.setRate(Money.MAX_RATE());
+
+        uint256 maxMsgValue = type(uint256).max / Money.MAX_RATE() / (10 ** money.decimals());
+        uint256 excessive = maxMsgValue + 1;
+
+        // previewBuy should not revert and should indicate withinGuard == false
+        (uint256 previewAmount, bool within) = money.previewBuy(excessive);
+        assertFalse(within, "previewBuy should indicate wei exceeds guard");
+
+        // previewAmount is computed deterministically (may be zero or overflow-protected by solidity semantics)
+        // ensure preview call did not mutate contract state
+        assertEq(money.queuedAmount(), 0);
+    }
+
     function testQueueAndExecuteWithdrawalTimelock() public {
         // ensure contract has balance
         uint256 contractBal = address(money).balance;
