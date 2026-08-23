@@ -2,6 +2,7 @@
 pragma solidity ^0.8.13;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
@@ -18,6 +19,7 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     event WithdrawalQueued(uint256 amount, uint256 executeAfter);
     event WithdrawalExecuted(uint256 amount);
     event WithdrawalCancelled(uint256 amount);
+    event ERC20Rescued(address indexed token, address indexed to, uint256 amount);
 
     constructor() ERC20("Money", "MNY") {
         // initial supply 0, owner is deployer
@@ -88,6 +90,18 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     /// @notice Unpause.
     function unpause() external onlyOwner {
         _unpause();
+    }
+
+    /// @notice Rescue third-party ERC20 tokens accidentally sent to this contract.
+    /// Owner-only, non-reentrant, and explicitly disallows sweeping the Money token itself.
+    function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner nonReentrant {
+        require(address(token) != address(this), "Cannot sweep Money token");
+        require(amount > 0, "Amount > 0");
+
+        bool ok = token.transfer(to, amount);
+        require(ok, "ERC20 transfer failed");
+
+        emit ERC20Rescued(address(token), to, amount);
     }
 
     // Allow contract to receive ETH (so tests or others can fund it directly if needed)

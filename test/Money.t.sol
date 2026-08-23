@@ -2,7 +2,18 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../contracts/Money.sol";
+
+contract SimpleERC20 is ERC20 {
+    constructor(string memory name, string memory symbol) ERC20(name, symbol) {
+        _mint(msg.sender, 0);
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
 
 contract MoneyTest is Test {
     Money money;
@@ -113,5 +124,28 @@ contract MoneyTest is Test {
         vm.prank(owner);
         vm.expectRevert();
         money.executeWithdrawal();
+    }
+
+    function testRescueERC20Successful() public {
+        // deploy a simple ERC20 and mint tokens to the Money contract
+        SimpleERC20 token = new SimpleERC20("TKN", "TKN");
+        token.mint(address(money), 1000);
+
+        // owner rescues tokens to owner address
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, true);
+        emit Money.ERC20Rescued(address(token), owner, 1000);
+        vm.prank(owner);
+        money.rescueERC20(token, owner, 1000);
+
+        assertEq(token.balanceOf(owner), 1000);
+        assertEq(token.balanceOf(address(money)), 0);
+    }
+
+    function testRescueERC20CannotSweepMoney() public {
+        // attempt to sweep the Money token should revert
+        vm.prank(owner);
+        vm.expectRevert(bytes("Cannot sweep Money token"));
+        money.rescueERC20(IERC20(address(money)), owner, 1);
     }
 }
