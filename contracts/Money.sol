@@ -25,8 +25,9 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     uint256 public rate;
 
     event Bought(address indexed buyer, uint256 weiAmount, uint256 tokenAmount, uint256 rate);
-    event WithdrawalQueued(uint256 amount, uint256 executeAfter);
-    event WithdrawalExecuted(uint256 amount);
+    // include recipient in queued and executed withdrawal events for improved off-chain indexing
+    event WithdrawalQueued(uint256 amount, uint256 executeAfter, address indexed recipient);
+    event WithdrawalExecuted(uint256 amount, address indexed recipient);
     event WithdrawalCancelled(uint256 amount);
     event ERC20Rescued(address indexed token, address indexed to, uint256 amount);
     event RateChanged(uint256 newRate);
@@ -79,7 +80,7 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         queuedAmount = amount;
         queuedExecuteTime = block.timestamp + TIMELOCK;
         queuedRecipient = owner();
-        emit WithdrawalQueued(amount, queuedExecuteTime);
+        emit WithdrawalQueued(amount, queuedExecuteTime, queuedRecipient);
     }
 
     /// @notice Owner queues a withdrawal of ETH to an arbitrary recipient. Needs executeWithdrawal after 48h.
@@ -93,7 +94,7 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         queuedAmount = amount;
         queuedExecuteTime = block.timestamp + TIMELOCK;
         queuedRecipient = recipient;
-        emit WithdrawalQueued(amount, queuedExecuteTime);
+        emit WithdrawalQueued(amount, queuedExecuteTime, queuedRecipient);
     }
 
     /// @notice Execute a queued withdrawal after the 48h timelock. Callable by anyone once timelock has expired.
@@ -112,7 +113,7 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         (bool ok, ) = payable(recipient).call{value: amount}("");
         require(ok, "Transfer failed");
 
-        emit WithdrawalExecuted(amount);
+        emit WithdrawalExecuted(amount, recipient);
     }
 
     /// @notice Cancel a queued withdrawal. Callable by owner even while paused to allow emergency retraction.
