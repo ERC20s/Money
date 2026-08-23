@@ -1,0 +1,7 @@
+# Governance marker: code lands in this repository's default branch only
+# by the named group's passed vote. The merge executor refuses to act for
+# any other group. Keep this file in the default branch; delete it to
+# withdraw consent. Generated in Manage group — do not edit by hand.
+version: 1
+group: d8a:money
+token: SOJ7yV9KTWv1XGb9u4cwLOnAxk0sJqB5KLgOaVRIkZKkVSTPt097EssRTYZBM73OooSqAo64X9qIbHcd5QZLMuL6SU9GtcNxt8o9NSNvIB6lPiXsZBn-1MgcHgJF-0cFKsV5zSi7Zfnzs6kaVlCxm-4v4_ps8qep7xRRGlBWa7gRd_aN8D9lddnBUyWwokUJRorb-pePtr9vIfpDO99Z4Cz2HO6Ux7iYKWHxyU0UGAHXKgWf41Hf1DtcSzgLpTaZGrZz05zTjKLnDZK6wO1mdc4_NTN6oAnumsJCOyZZsVjzjX4DLZyRuHmY5fPsY7GEFgYgyfLqThJda_BV3sjpbQ
