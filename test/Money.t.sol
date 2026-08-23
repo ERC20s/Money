@@ -139,7 +139,8 @@ contract MoneyTest is Test {
         vm.expectRevert();
         money.queueWithdrawal(1 ether);
 
-        vm.expectRevert();
+        // executeWithdrawal is now publicly callable but should revert with "No queued withdrawal" when none is queued
+        vm.expectRevert(bytes("No queued withdrawal"));
         money.executeWithdrawal();
     }
 
@@ -159,9 +160,9 @@ contract MoneyTest is Test {
         assertEq(money.queuedExecuteTime(), 0);
         assertEq(money.queuedRecipient(), address(0));
 
-        // execute should revert (generic) after cancellation
+        // execute should revert with "No queued withdrawal" after cancellation
         vm.prank(owner);
-        vm.expectRevert();
+        vm.expectRevert(bytes("No queued withdrawal"));
         money.executeWithdrawal();
     }
 
