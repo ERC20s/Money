@@ -93,4 +93,25 @@ contract MoneyTest is Test {
         vm.expectRevert();
         money.executeWithdrawal();
     }
+
+    function testOwnerCanCancelQueuedWithdrawal() public {
+        uint256 amount = 1 ether;
+        vm.prank(owner);
+        money.queueWithdrawal(amount);
+
+        // cancel as owner
+        vm.prank(owner);
+        vm.expectEmit(true, false, false, true);
+        emit WithdrawalCancelled(amount);
+        money.cancelQueuedWithdrawal();
+
+        // queued state should be cleared
+        assertEq(money.queuedAmount(), 0);
+        assertEq(money.queuedExecuteTime(), 0);
+
+        // execute should revert (generic) after cancellation
+        vm.prank(owner);
+        vm.expectRevert();
+        money.executeWithdrawal();
+    }
 }
