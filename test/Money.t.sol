@@ -170,6 +170,18 @@ contract MoneyTest is Test {
         money.executeWithdrawal();
     }
 
+    // New test: non-owner cannot redirect a queued withdrawal via queueWithdrawalTo
+    function testQueueWithdrawalToOnlyOwner() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        money.queueWithdrawalTo(alice, 1 ether);
+
+        // failed call must not have mutated any queued withdrawal state
+        assertEq(money.queuedAmount(), 0);
+        assertEq(money.queuedExecuteTime(), 0);
+        assertEq(money.queuedRecipient(), address(0));
+    }
+
     function testOwnerCanCancelQueuedWithdrawal() public {
         uint256 amount = 1 ether;
         vm.prank(owner);
