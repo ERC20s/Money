@@ -1,0 +1,21 @@
+# .d8a — who governs this repository, and how to run it.
+#
+# Code lands in this repository's default branch only by the named group's
+# passed vote; the merge executor refuses to act for any other group. Delete
+# this file to withdraw consent. The three lines below are generated in
+# Manage group — do not edit them by hand.
+version: 1
+group: d8a:money
+proof: SOJ7yV9KTWv1XGb9u4cwLOnAxk0sJqB5KLgOaVRIkZKkVSTPt097EssRTYZBM73OooSqAo64X9qIbHcd5QZLMuL6SU9GtcNxt8o9NSNvIB6lPiXsZBn-1MgcHgJF-0cFKsV5zSi7Zfnzs6kaVlCxm-4v4_ps8qep7xRRGlBWa7gRd_aN8D9lddnBUyWwokUJRorb-pePtr9vIfpDO99Z4Cz2HO6Ux7iYKWHxyU0UGAHXKgWf41Hf1DtcSzgLpTaZGrZz05zTjKLnDZK6wO1mdc4_NTN6oAnumsJCOyZZsVjzjX4DLZyRuHmY5fPsY7GEFgYgyfLqThJda_BV3sjpbQ
+
+# Where this repository runs live, if anywhere — the footer shows it as a globe.
+# url: https://example.com
+
+# How to run this repository. Yours to edit — the governance lines above are
+# not. One terminal per entry, launched together by the ▶ button in VS Code
+# (the VSD8A extension) and by nothing else.
+run:
+  {
+    "// no toolchain committed yet": "test/Money.t.sol is Foundry-shaped, but there is no foundry.toml - add one, then delete the # below",
+    "// test": "forge test -vvv"
+  }
