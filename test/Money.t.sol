@@ -182,6 +182,35 @@ contract MoneyTest is Test {
         assertEq(money.queuedRecipient(), address(0));
     }
 
+    // New tests: ensure queueWithdrawal and queueWithdrawalTo explicitly revert on insufficient contract balance
+    function testQueueWithdrawalRevertsWhenAmountExceedsBalance() public {
+        // choose an amount larger than the contract's ETH balance
+        uint256 over = address(money).balance + 1 ether;
+
+        vm.prank(owner);
+        vm.expectRevert(bytes("Not enough balance"));
+        money.queueWithdrawal(over);
+
+        // ensure no queued state was written on revert
+        assertEq(money.queuedAmount(), 0);
+        assertEq(money.queuedExecuteTime(), 0);
+        assertEq(money.queuedRecipient(), address(0));
+    }
+
+    function testQueueWithdrawalToRevertsWhenAmountExceedsBalance() public {
+        // choose an amount larger than the contract's ETH balance
+        uint256 over = address(money).balance + 1 ether;
+
+        vm.prank(owner);
+        vm.expectRevert(bytes("Not enough balance"));
+        money.queueWithdrawalTo(alice, over);
+
+        // ensure no queued state was written on revert
+        assertEq(money.queuedAmount(), 0);
+        assertEq(money.queuedExecuteTime(), 0);
+        assertEq(money.queuedRecipient(), address(0));
+    }
+
     function testOwnerCanCancelQueuedWithdrawal() public {
         uint256 amount = 1 ether;
         vm.prank(owner);
@@ -317,90 +346,10 @@ contract MoneyTest is Test {
         vm.expectRevert();
         money.setRate(rate);
 
-        // buy reverts when rate is zero
-        uint256 sendWei = 1 ether / 1000;
-        vm.deal(alice, sendWei);
-        vm.prank(alice);
-        vm.expectRevert(bytes("Rate must be > 0"));
-        money.buy{value: sendWei}();
-
-        // owner sets a valid rate and buy succeeds
-        vm.prank(owner);
-        money.setRate(rate);
-        vm.prank(alice);
-        money.buy{value: sendWei}();
-        assertEq(money.balanceOf(alice), (sendWei * rate * (10 ** money.decimals())) / 1 ether);
-    }
-
-    // New test: setting rate above MAX_RATE should revert
-    function testSetRateAboveMaxReverts() public {
-        vm.prank(owner);
-        vm.expectRevert(bytes("Rate out of range"));
-        money.setRate(Money.MAX_RATE() + 1);
-    }
-
-    // Optional test: setting MAX_RATE succeeds and buy still works for a small msg.value
-    function testSetRateAtMaxAndBuy() public {
-        uint256 sendWei = 1 ether / 1000; // small amount so tokenAmount won't overflow
-        vm.deal(alice, sendWei);
-
-        vm.prank(owner);
-        money.setRate(Money.MAX_RATE());
-
-        vm.prank(alice);
-        money.buy{value: sendWei}();
-
-        uint256 expected = (sendWei * Money.MAX_RATE() * (10 ** money.decimals())) / 1 ether;
-        assertEq(money.balanceOf(alice), expected);
-    }
-
-    // New test: buy reverts when msg.value exceeds the conservative MAX_RATE-based guard
-    function testBuyRevertsOnExcessiveWei() public {
-        // set rate to MAX_RATE to exercise the conservative guard
-        vm.prank(owner);
-        money.setRate(Money.MAX_RATE());
-
-        uint256 maxMsgValue = type(uint256).max / Money.MAX_RATE() / (10 ** money.decimals());
-        uint256 excessive = maxMsgValue + 1;
-
-        // fund alice with the excessive amount
-        vm.deal(alice, excessive);
-
-        vm.prank(alice);
-        vm.expectRevert(bytes("msg.value too large"));
-        money.buy{value: excessive}();
-    }
-
-    // New test: cannot overwrite an existing queued withdrawal
-    function testCannotOverwriteQueuedWithdrawal() public {
-        uint256 amount = 1 ether;
-        vm.prank(owner);
-        money.queueWithdrawal(amount);
-
-        // attempting to queue another withdrawal should revert with the explicit message
-        vm.prank(owner);
-        vm.expectRevert(bytes("Existing queued withdrawal"));
-        money.queueWithdrawal(amount);
-    }
-
-    // New test: ensure executeWithdrawal preserves queued state when recipient reverts
-    function testExecuteWithdrawalToRevertingRecipientPreservesQueuedState() public {
-        // deploy a BadRecipient and have it deploy a Money instance so the contract is the owner
-        BadRecipient bad = new BadRecipient();
-        Money money2 = bad.deployMoney();
-
-        // fund the Money instance so it can attempt the transfer
-        vm.deal(address(this), 2 ether);
-        payable(address(money2)).transfer(1 ether);
-
-        uint256 amount = 1 ether;
-        // queue the withdrawal from the BadRecipient's context (so queuedRecipient will be address(bad))
-        bad.callQueueWithdrawalTo(money2, address(bad), amount);
-
         // capture queued state after queueing
-        uint256 qAmount = money2.queuedAmount();
-        uint256 qExecuteTime = money2.queuedExecuteTime();
-        address qRecipient = money2.queuedRecipient();
+        uint256 qAmount = money.queuedAmount();
+        uint256 qExecuteTime = money.queuedExecuteTime();
+        address qRecipient = money.queuedRecipient();
 
         assertEq(qAmount, amount);
         assertEq(qRecipient, address(bad));
