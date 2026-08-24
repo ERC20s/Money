@@ -219,6 +219,43 @@ contract MoneyTest is Test {
         assertTrue(money.paused());
     }
 
+    function testExecuteWithdrawalRevertsWhilePausedThenSucceedsAfterUnpause() public {
+        uint256 amount = 1 ether;
+
+        // queue while unpaused, since queueWithdrawal requires whenNotPaused
+        vm.prank(owner);
+        money.queueWithdrawal(amount);
+
+        // advance past the 48h timelock so only the pause guard is under test
+        vm.warp(block.timestamp + 48 hours + 1);
+
+        // pause the contract
+        vm.prank(owner);
+        money.pause();
+        assertTrue(money.paused());
+
+        // executeWithdrawal must revert while paused even though the timelock has expired
+        vm.expectRevert();
+        money.executeWithdrawal();
+
+        // queued state must remain intact after the reverted attempt
+        assertEq(money.queuedAmount(), amount);
+        assertEq(money.queuedRecipient(), owner);
+
+        // unpause and confirm executeWithdrawal now succeeds
+        vm.prank(owner);
+        money.unpause();
+
+        uint256 ownerBefore = owner.balance;
+        money.executeWithdrawal();
+        assertEq(owner.balance, ownerBefore + amount);
+
+        // queued state fully cleared after successful execution
+        assertEq(money.queuedAmount(), 0);
+        assertEq(money.queuedExecuteTime(), 0);
+        assertEq(money.queuedRecipient(), address(0));
+    }
+
     function testRescueERC20Successful() public {
         // deploy a simple ERC20 and mint tokens to the Money contract
         SimpleERC20 token = new SimpleERC20("TKN", "TKN");
