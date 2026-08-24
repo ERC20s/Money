@@ -369,6 +369,45 @@ contract MoneyTest is Test {
         assertEq(money2.queuedRecipient(), qRecipient);
     }
 
+    // New test: queueWithdrawalTo funds an arbitrary recipient, and a completely
+    // unrelated third party (neither owner nor recipient) can successfully call
+    // executeWithdrawal() once the timelock has expired.
+    function testExecuteWithdrawalToArbitraryRecipientByThirdParty() public {
+        address recipient = address(0x1234);
+        address thirdParty = address(0x9999);
+        uint256 amount = 1 ether;
+
+        // sanity: recipient and thirdParty are distinct from owner and each other
+        assertTrue(recipient != owner);
+        assertTrue(thirdParty != owner);
+        assertTrue(thirdParty != recipient);
+
+        // owner queues a withdrawal to an arbitrary recipient
+        vm.prank(owner);
+        money.queueWithdrawalTo(recipient, amount);
+        assertEq(money.queuedRecipient(), recipient);
+        assertEq(money.queuedAmount(), amount);
+
+        // advance time past the 48h timelock
+        vm.warp(block.timestamp + 48 hours + 1);
+
+        uint256 recipientBefore = recipient.balance;
+
+        // an unrelated third party (not owner, not recipient) executes the withdrawal
+        vm.prank(thirdParty);
+        vm.expectEmit(true, false, false, true);
+        emit Money.WithdrawalExecuted(amount, recipient);
+        money.executeWithdrawal();
+
+        // recipient received the funds
+        assertEq(recipient.balance, recipientBefore + amount);
+
+        // queued state fully reset
+        assertEq(money.queuedAmount(), 0);
+        assertEq(money.queuedExecuteTime(), 0);
+        assertEq(money.queuedRecipient(), address(0));
+    }
+
     // New tests: verify Deposit event is emitted when contract receives ETH via receive() and fallback()
     function testEmitDepositOnReceive() public {
         uint256 amt = 1 ether / 2; // 0.5 ETH
