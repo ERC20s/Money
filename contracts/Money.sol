@@ -128,13 +128,16 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         uint256 amount = queuedAmount;
         address recipient = queuedRecipient;
 
-        // clear state before external call
+        // Perform the external call first (nonReentrant guards against reentrancy).
+        // Only clear the queued state once the transfer has actually succeeded, so a
+        // reverting/failing recipient leaves the queued withdrawal intact for the owner
+        // to inspect, retry, or cancel.
+        (bool ok, ) = payable(recipient).call{value: amount}("");
+        require(ok, "Transfer failed");
+
         queuedAmount = 0;
         queuedExecuteTime = 0;
         queuedRecipient = address(0);
-
-        (bool ok, ) = payable(recipient).call{value: amount}("");
-        require(ok, "Transfer failed");
 
         emit WithdrawalExecuted(amount, recipient);
     }
