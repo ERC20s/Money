@@ -192,6 +192,33 @@ contract MoneyTest is Test {
         money.executeWithdrawal();
     }
 
+    function testCancelQueuedWithdrawalWorksWhilePaused() public {
+        uint256 amount = 1 ether;
+
+        // queue while unpaused, since queueWithdrawal requires whenNotPaused
+        vm.prank(owner);
+        money.queueWithdrawal(amount);
+
+        // pause the contract
+        vm.prank(owner);
+        money.pause();
+        assertTrue(money.paused());
+
+        // cancel should still succeed while paused (no whenNotPaused on cancelQueuedWithdrawal)
+        vm.prank(owner);
+        vm.expectEmit(true, false, false, true);
+        emit WithdrawalCancelled(amount);
+        money.cancelQueuedWithdrawal();
+
+        // queued state should be fully cleared
+        assertEq(money.queuedAmount(), 0);
+        assertEq(money.queuedExecuteTime(), 0);
+        assertEq(money.queuedRecipient(), address(0));
+
+        // cancellation must not implicitly unpause the contract
+        assertTrue(money.paused());
+    }
+
     function testRescueERC20Successful() public {
         // deploy a simple ERC20 and mint tokens to the Money contract
         SimpleERC20 token = new SimpleERC20("TKN", "TKN");
