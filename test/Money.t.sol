@@ -190,7 +190,7 @@ contract MoneyTest is Test {
         // cancel as owner
         vm.prank(owner);
         vm.expectEmit(true, false, false, true);
-        emit WithdrawalCancelled(amount);
+        emit Money.WithdrawalCancelled(amount);
         money.cancelQueuedWithdrawal();
 
         // queued state should be cleared
@@ -219,7 +219,7 @@ contract MoneyTest is Test {
         // cancel should still succeed while paused (no whenNotPaused on cancelQueuedWithdrawal)
         vm.prank(owner);
         vm.expectEmit(true, false, false, true);
-        emit WithdrawalCancelled(amount);
+        emit Money.WithdrawalCancelled(amount);
         money.cancelQueuedWithdrawal();
 
         // queued state should be fully cleared
@@ -592,5 +592,167 @@ contract MoneyTest is Test {
         (uint256 tokenAmount, bool wouldSucceed) = money.previewBuy(excessive);
         assertFalse(wouldSucceed);
         assertEq(tokenAmount, 0);
+    }
+
+    // --- Two-step ownership handover (Ownable2Step) -------------------------
+    //
+    // Every path that moves the contract's ETH is onlyOwner, so the handover is
+    // what protects the treasury: transferOwnership() must only NOMINATE, and
+    // control must move solely when the nominee calls acceptOwnership().
+
+    function testTransferOwnershipOnlyNominatesAndOldOwnerKeepsControl() public {
+        vm.prank(owner);
+        money.transferOwnership(alice);
+
+        // control has not moved
+        assertEq(money.owner(), owner);
+        assertEq(money.pendingOwner(), alice);
+
+        // the nominee cannot touch anything owner-gated before accepting
+        vm.prank(alice);
+        vm.expectRevert(bytes("Ownable: caller is not the owner"));
+        money.setRate(1);
+
+        vm.prank(alice);
+        vm.expectRevert(bytes("Ownable: caller is not the owner"));
+        money.queueWithdrawal(1 ether);
+
+        vm.prank(alice);
+        vm.expectRevert(bytes("Ownable: caller is not the owner"));
+        money.pause();
+
+        // the current owner still reaches the treasury
+        vm.prank(owner);
+        money.queueWithdrawal(1 ether);
+        assertEq(money.queuedRecipient(), owner);
+
+        vm.warp(block.timestamp + 48 hours + 1);
+        uint256 ownerBefore = owner.balance;
+        money.executeWithdrawal();
+        assertEq(owner.balance, ownerBefore + 1 ether);
+    }
+
+    function testAcceptOwnershipRevertsForAnyoneButThePendingOwner() public {
+        address bob = address(0xCAFE);
+
+        vm.prank(owner);
+        money.transferOwnership(alice);
+
+        vm.prank(bob);
+        vm.expectRevert(bytes("Ownable2Step: caller is not the new owner"));
+        money.acceptOwnership();
+
+        // even the current owner cannot accept on the nominee's behalf
+        vm.prank(owner);
+        vm.expectRevert(bytes("Ownable2Step: caller is not the new owner"));
+        money.acceptOwnership();
+
+        assertEq(money.owner(), owner);
+        assertEq(money.pendingOwner(), alice);
+    }
+
+    function testAcceptOwnershipMovesControlAndNewOwnerCanWithdraw() public {
+        vm.prank(owner);
+        money.transferOwnership(alice);
+
+        vm.prank(alice);
+        money.acceptOwnership();
+
+        assertEq(money.owner(), alice);
+        assertEq(money.pendingOwner(), address(0));
+
+        // the previous owner is now powerless
+        vm.prank(owner);
+        vm.expectRevert(bytes("Ownable: caller is not the owner"));
+        money.setRate(1);
+
+        vm.prank(owner);
+        vm.expectRevert(bytes("Ownable: caller is not the owner"));
+        money.queueWithdrawal(1 ether);
+
+        // the new owner queues and executes a withdrawal to itself
+        vm.prank(alice);
+        money.queueWithdrawal(2 ether);
+        assertEq(money.queuedRecipient(), alice);
+
+        vm.warp(block.timestamp + 48 hours + 1);
+        uint256 aliceBefore = alice.balance;
+        money.executeWithdrawal();
+        assertEq(alice.balance, aliceBefore + 2 ether);
+
+        // and can still set the rate
+        vm.prank(alice);
+        money.setRate(3);
+        assertEq(money.rate(), 3);
+    }
+
+    function testTransferOwnershipToZeroCancelsPendingHandover() public {
+        vm.prank(owner);
+        money.transferOwnership(alice);
+        assertEq(money.pendingOwner(), alice);
+
+        // a mistyped nomination is undone by nominating address(0)
+        vm.prank(owner);
+        money.transferOwnership(address(0));
+        assertEq(money.pendingOwner(), address(0));
+
+        vm.prank(alice);
+        vm.expectRevert(bytes("Ownable2Step: caller is not the new owner"));
+        money.acceptOwnership();
+
+        assertEq(money.owner(), owner);
+    }
+
+    function testRenominationReplacesThePendingOwner() public {
+        address bob = address(0xCAFE);
+
+        vm.prank(owner);
+        money.transferOwnership(alice);
+        vm.prank(owner);
+        money.transferOwnership(bob);
+
+        assertEq(money.pendingOwner(), bob);
+
+        vm.prank(alice);
+        vm.expectRevert(bytes("Ownable2Step: caller is not the new owner"));
+        money.acceptOwnership();
+
+        vm.prank(bob);
+        money.acceptOwnership();
+        assertEq(money.owner(), bob);
+    }
+
+    function testRenounceOwnershipRevertsAndTreasuryStaysReachable() public {
+        vm.prank(owner);
+        vm.expectRevert(bytes("Ownership cannot be renounced"));
+        money.renounceOwnership();
+
+        vm.prank(alice);
+        vm.expectRevert(bytes("Ownership cannot be renounced"));
+        money.renounceOwnership();
+
+        assertEq(money.owner(), owner);
+
+        // the ETH held by the contract is still withdrawable by the owner
+        vm.prank(owner);
+        money.queueWithdrawal(1 ether);
+        vm.warp(block.timestamp + 48 hours + 1);
+
+        uint256 ownerBefore = owner.balance;
+        money.executeWithdrawal();
+        assertEq(owner.balance, ownerBefore + 1 ether);
+    }
+
+    function testPendingOwnerCannotRenounceAfterAccepting() public {
+        vm.prank(owner);
+        money.transferOwnership(alice);
+        vm.prank(alice);
+        money.acceptOwnership();
+
+        vm.prank(alice);
+        vm.expectRevert(bytes("Ownership cannot be renounced"));
+        money.renounceOwnership();
+
+        assertEq(money.owner(), alice);
     }
 }

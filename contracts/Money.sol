@@ -5,11 +5,14 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /// @notice Minimal Money ERC20 with payable buy(), 48h timelock on owner withdrawals, and pause.
-contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
+/// @dev Ownership is TWO-STEP (Ownable2Step): transferOwnership() only nominates a pending owner
+/// and the nominee must call acceptOwnership() to take control, so a mistyped or unreachable
+/// address can never take ownership of the contract's ETH. Ownership is also non-renounceable.
+contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant TIMELOCK = 48 hours;
@@ -180,6 +183,17 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     /// @notice Unpause.
     function unpause() external onlyOwner {
         _unpause();
+    }
+
+    /// @notice Ownership can never be renounced.
+    /// @dev Every withdrawal path (queueWithdrawal, queueWithdrawalTo, cancelQueuedWithdrawal),
+    /// setRate, pause/unpause and rescueERC20 are onlyOwner, so an owner of address(0) would
+    /// strand every wei held by this contract for ever. The inherited Ownable.renounceOwnership
+    /// is therefore disabled; use transferOwnership() + acceptOwnership() to hand control over.
+    /// @dev Deliberately left non-view so the call is a plain CALL (and so the signature keeps
+    /// matching the inherited one); it reverts for every caller, owner included.
+    function renounceOwnership() public override {
+        revert("Ownership cannot be renounced");
     }
 
     /// @notice Rescue third-party ERC20 tokens accidentally sent to this contract.

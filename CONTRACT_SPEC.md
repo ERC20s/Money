@@ -29,6 +29,8 @@ Public API (required)
 - Both buy entry points carry whenNotPaused and nonReentrant and share one private `_buy(uint256 minTokenAmount)` body, so the reentrancy guard is entered exactly once per call.
 - ownerWithdraw() that withdraws accumulated ETH to owner after timelock conditions are satisfied.
 - pause()/unpause() callable by owner to enable emergency pause of buy() and withdrawals.
+- Two-step ownership handover (OpenZeppelin Ownable2Step): transferOwnership(newOwner) only records a pending owner and emits OwnershipTransferStarted; the current owner keeps every owner power until the nominee calls acceptOwnership(). pendingOwner() exposes the nomination. transferOwnership(address(0)) clears a pending handover, and a later transferOwnership replaces it. Any caller other than the pending owner gets "Ownable2Step: caller is not the new owner".
+- renounceOwnership() is disabled: it reverts with "Ownership cannot be renounced" for every caller, owner included.
 
 buy() unit normalization
 
@@ -39,6 +41,8 @@ Security considerations
 - Reentrancy guards on buy() and withdrawal flows.
 - Use OpenZeppelin/ERC20 tested primitives where possible.
 - Explicit owner-only modifiers and events for pause/unpause, queueWithdrawal, executeWithdrawal.
+- Ownership is the single point of failure for the ETH the contract custodies: queueWithdrawal, queueWithdrawalTo, cancelQueuedWithdrawal, setRate, pause/unpause and rescueERC20 are all onlyOwner. Handover is therefore two-step and never one-shot — a mistyped address, a wrong-chain address or a contract that cannot call acceptOwnership() is simply never accepted, and the sitting owner keeps control. Ownership cannot be renounced, so owner() can never become address(0) and strand the balance.
+- Trade-off accepted deliberately: any deploy or ops runbook must call acceptOwnership() from the new owner to finish a handover, and the contract deviates from ERC-173 tooling that expects renounceOwnership() to succeed.
 
 File layout and toolchain
 
@@ -51,6 +55,7 @@ Prioritized test matrix
 - withdraw timelock enqueue/execute tests
 - pause/resume blocks buys and withdrawals
 - owner-only access tests and basic ERC20 unit tests
+- ownership handover tests: transferOwnership only nominates (old owner still queues and executes a withdrawal, nominee is refused by setRate/queueWithdrawal/pause); acceptOwnership reverts for anyone but the pending owner; acceptOwnership moves control and the new owner can queue and execute; transferOwnership(address(0)) cancels a pending handover; a second nomination replaces the first; renounceOwnership reverts for owner and non-owner with the contract's ETH still withdrawable
 
 PR checklist (for reviewers)
 
