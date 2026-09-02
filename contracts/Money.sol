@@ -52,7 +52,23 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
 
     /// @notice Buy tokens by sending ETH. Uses owner-set `rate` (token units per 1 ETH).
     /// For example, rate==1 mints 1 token * (10**decimals) per 1 ETH.
+    /// @dev Unprotected against a rate change mined before this call: kept for backwards
+    /// compatibility. Prefer buy(uint256 minTokenAmount) with a quote from previewBuy().
     function buy() external payable whenNotPaused nonReentrant {
+        _buy(0);
+    }
+
+    /// @notice Buy tokens by sending ETH, reverting unless at least `minTokenAmount` token
+    /// units are minted. Protects a buyer from an owner rate change mined between the quote
+    /// (see previewBuy) and this transaction.
+    /// @param minTokenAmount Minimum acceptable token units out (same units as balanceOf).
+    function buy(uint256 minTokenAmount) external payable whenNotPaused nonReentrant {
+        _buy(minTokenAmount);
+    }
+
+    /// @dev Shared buy body. Both external entry points carry whenNotPaused and nonReentrant,
+    /// so the guard is entered exactly once per call.
+    function _buy(uint256 minTokenAmount) private {
         require(msg.value > 0, "Must send ETH to buy");
         require(rate > 0, "Rate must be > 0");
 
@@ -67,6 +83,8 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         uint256 tokenAmount = (msg.value * rate * tokenDecimalsFactor) / 1 ether;
 
         require(tokenAmount > 0, "Token amount zero after normalization");
+        // slippage guard: a rate cut between quote and execution can never shortchange the buyer
+        require(tokenAmount >= minTokenAmount, "Insufficient tokens out");
 
         _mint(msg.sender, tokenAmount);
         emit Bought(msg.sender, msg.value, tokenAmount, rate);

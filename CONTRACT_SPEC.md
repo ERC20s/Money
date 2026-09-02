@@ -23,7 +23,10 @@ Assumptions (to be confirmed in PR discussion)
 Public API (required)
 
 - Full ERC20 interface (name, symbol, decimals, totalSupply, balanceOf, transfer, approve, allowance, transferFrom).
-- A payable buy(uint256 rate) or buy() function that mints tokens in exchange for ETH sent; the exact signature may vary but must be described in the PR.
+- A payable buy() function that mints tokens in exchange for ETH sent, at the owner-set `rate`. Kept for backwards compatibility; it has no slippage protection.
+- A payable buy(uint256 minTokenAmount) that mints as buy() does but reverts with "Insufficient tokens out" unless at least `minTokenAmount` token units are minted. This is the recommended entry point: it binds a quote from previewBuy(weiAmount) to the trade, so an owner rate change mined between quote and execution cannot shortchange the buyer.
+- previewBuy(uint256 weiAmount) view returning (tokenAmount, wouldSucceed) — the quote a caller passes as `minTokenAmount`.
+- Both buy entry points carry whenNotPaused and nonReentrant and share one private `_buy(uint256 minTokenAmount)` body, so the reentrancy guard is entered exactly once per call.
 - ownerWithdraw() that withdraws accumulated ETH to owner after timelock conditions are satisfied.
 - pause()/unpause() callable by owner to enable emergency pause of buy() and withdrawals.
 
@@ -44,6 +47,7 @@ File layout and toolchain
 Prioritized test matrix
 
 - buy() normalization tests
+- buy(minTokenAmount) slippage tests: succeeds when a previewBuy quote is met; reverts with "Insufficient tokens out" when the owner lowers the rate between quote and buy, minting nothing; accepts a rate that moved in the buyer's favour; still blocked while paused; legacy buy() behaviour unchanged
 - withdraw timelock enqueue/execute tests
 - pause/resume blocks buys and withdrawals
 - owner-only access tests and basic ERC20 unit tests
