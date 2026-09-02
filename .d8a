@@ -129,6 +129,5 @@ payments:
 # (the VSD8A extension) and by nothing else.
 run:
   {
-    "// no toolchain committed yet": "test/Money.t.sol is Foundry-shaped, but there is no foundry.toml - add one, then delete the # below",
-    "// test": "forge test -vvv"
+    "test": "forge test -vvv"
   }
