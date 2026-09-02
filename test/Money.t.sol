@@ -482,6 +482,106 @@ contract MoneyTest is Test {
         assertEq(tokenAmount, 0);
     }
 
+    // New tests for the slippage-guarded buy(uint256 minTokenAmount)
+
+    // A quote taken from previewBuy is honoured when the rate has not moved.
+    function testBuyWithMinSucceedsWhenQuoteMet() public {
+        uint256 rate = 2;
+        uint256 sendWei = 1 ether / 1000;
+
+        vm.prank(owner);
+        money.setRate(rate);
+
+        // buyer quotes first, then buys demanding at least the quoted amount
+        (uint256 quoted, bool wouldSucceed) = money.previewBuy(sendWei);
+        assertTrue(wouldSucceed);
+
+        vm.deal(alice, sendWei);
+        vm.prank(alice);
+        money.buy{value: sendWei}(quoted);
+
+        assertEq(money.balanceOf(alice), quoted);
+        assertEq(quoted, (sendWei * rate * (10 ** money.decimals())) / 1 ether);
+    }
+
+    // The point of the guard: an owner rate cut mined between quote and buy must revert,
+    // not silently deliver fewer tokens.
+    function testBuyWithMinRevertsAfterRateCut() public {
+        uint256 rate = 4;
+        uint256 sendWei = 1 ether / 1000;
+
+        vm.prank(owner);
+        money.setRate(rate);
+
+        (uint256 quoted, ) = money.previewBuy(sendWei);
+
+        // owner halves the rate before the buyer's transaction lands
+        vm.prank(owner);
+        money.setRate(rate / 2);
+
+        vm.deal(alice, sendWei);
+        vm.prank(alice);
+        vm.expectRevert(bytes("Insufficient tokens out"));
+        money.buy{value: sendWei}(quoted);
+
+        // nothing was minted by the reverted attempt
+        assertEq(money.balanceOf(alice), 0);
+        assertEq(money.totalSupply(), 0);
+        assertEq(alice.balance, sendWei);
+    }
+
+    // A rate increase between quote and buy is fine: the buyer gets more than the minimum.
+    function testBuyWithMinAcceptsBetterRate() public {
+        uint256 rate = 2;
+        uint256 sendWei = 1 ether / 1000;
+
+        vm.prank(owner);
+        money.setRate(rate);
+        (uint256 quoted, ) = money.previewBuy(sendWei);
+
+        vm.prank(owner);
+        money.setRate(rate * 2);
+
+        vm.deal(alice, sendWei);
+        vm.prank(alice);
+        money.buy{value: sendWei}(quoted);
+
+        assertEq(money.balanceOf(alice), quoted * 2);
+    }
+
+    // The legacy no-argument buy() is unchanged: it still mints at whatever the rate is.
+    function testLegacyBuyStillUnguarded() public {
+        uint256 rate = 4;
+        uint256 sendWei = 1 ether / 1000;
+
+        vm.prank(owner);
+        money.setRate(rate);
+
+        vm.prank(owner);
+        money.setRate(rate / 2);
+
+        vm.deal(alice, sendWei);
+        vm.prank(alice);
+        money.buy{value: sendWei}();
+
+        assertEq(money.balanceOf(alice), (sendWei * (rate / 2) * (10 ** money.decimals())) / 1 ether);
+    }
+
+    // The guarded entry point keeps the pause guard.
+    function testBuyWithMinBlockedWhilePaused() public {
+        uint256 sendWei = 1 ether / 1000;
+
+        vm.prank(owner);
+        money.setRate(1);
+        vm.prank(owner);
+        money.pause();
+
+        vm.deal(alice, sendWei);
+        vm.prank(alice);
+        vm.expectRevert();
+        money.buy{value: sendWei}(1);
+    }
+
     function testPreviewBuyReturnsFalseOnExcessiveWei() public {
         vm.prank(owner);
         money.setRate(Money.MAX_RATE());
