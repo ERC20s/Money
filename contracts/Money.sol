@@ -164,6 +164,17 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         _unpause();
     }
 
+    /// @notice Ownership of this contract cannot be renounced.
+    /// Every value-bearing path here is owner-gated (setRate, pause/unpause,
+    /// queueWithdrawal, queueWithdrawalTo, cancelQueuedWithdrawal, rescueERC20) and the
+    /// only ETH exit is a withdrawal that only the owner can queue. Renouncing ownership
+    /// would therefore strand the contract's entire ETH balance forever and make pause()
+    /// a one-way door. transferOwnership() remains available, so ownership can still be
+    /// handed to a multisig or another custodian.
+    function renounceOwnership() public override onlyOwner {
+        revert("Ownership cannot be renounced");
+    }
+
     /// @notice Rescue third-party ERC20 tokens accidentally sent to this contract.
     /// Owner-only, non-reentrant, and explicitly disallows sweeping the Money token itself.
     function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner nonReentrant {
