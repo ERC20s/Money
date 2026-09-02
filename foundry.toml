@@ -1,0 +1,19 @@
+[profile.default]
+src = "contracts"
+test = "test"
+out = "out"
+libs = ["lib"]
+# Qualified event emits (e.g. `emit Money.ERC20Rescued(...)` in test/Money.t.sol)
+# are only accepted by solc 0.8.21 and later, so the compiler is pinned above that.
+# contracts/Money.sol and test/Money.t.sol both declare pragma ^0.8.13, and
+# OpenZeppelin 4.9.x declares ^0.8.0, so 0.8.24 satisfies every file in the tree.
+solc = "0.8.24"
+optimizer = true
+optimizer_runs = 200
+verbosity = 2
+fs_permissions = []
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = false

@@ -190,7 +190,7 @@ contract MoneyTest is Test {
         // cancel as owner
         vm.prank(owner);
         vm.expectEmit(true, false, false, true);
-        emit WithdrawalCancelled(amount);
+        emit Money.WithdrawalCancelled(amount);
         money.cancelQueuedWithdrawal();
 
         // queued state should be cleared
@@ -219,7 +219,7 @@ contract MoneyTest is Test {
         // cancel should still succeed while paused (no whenNotPaused on cancelQueuedWithdrawal)
         vm.prank(owner);
         vm.expectEmit(true, false, false, true);
-        emit WithdrawalCancelled(amount);
+        emit Money.WithdrawalCancelled(amount);
         money.cancelQueuedWithdrawal();
 
         // queued state should be fully cleared
