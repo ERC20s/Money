@@ -27,6 +27,10 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
     uint256 public constant MAX_RATE = 1e12;
     uint256 public rate;
 
+    // rescue-to-zero opt-in
+    bool public rescueToZeroEnabled;
+    uint256 public queuedRescueToZeroExecuteTime;
+
     event Bought(address indexed buyer, uint256 weiAmount, uint256 tokenAmount, uint256 rate);
     // include recipient in queued and executed withdrawal events for improved off-chain indexing
     event WithdrawalQueued(uint256 amount, uint256 executeAfter, address indexed recipient);
@@ -36,6 +40,10 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
     event RateChanged(uint256 newRate);
     // Emit when contract receives ETH directly (receive/fallback)
     event Deposit(address indexed from, uint256 amount);
+
+    // events for rescue-to-zero timelock
+    event RescueToZeroQueued(uint256 executeAfter);
+    event RescueToZeroExecuted(uint256 executeAt);
 
     constructor() ERC20("Money", "MNY") {
         // initial supply 0, owner is deployer
@@ -196,11 +204,39 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
         revert("Ownership cannot be renounced");
     }
 
+    /// @notice Queue enabling rescue-to-zero (allow rescueERC20 to send to address(0)).
+    /// Owner-only, 48h timelock. Uses the same pattern as ETH withdrawals.
+    function queueEnableRescueToZero() external onlyOwner whenNotPaused {
+        require(queuedRescueToZeroExecuteTime == 0, "Existing queued enable");
+        queuedRescueToZeroExecuteTime = block.timestamp + TIMELOCK;
+        emit RescueToZeroQueued(queuedRescueToZeroExecuteTime);
+    }
+
+    /// @notice Execute the queued enable for rescue-to-zero. Callable by anyone after the timelock.
+    function executeEnableRescueToZero() external nonReentrant whenNotPaused {
+        require(queuedRescueToZeroExecuteTime != 0, "No queued enable");
+        require(block.timestamp >= queuedRescueToZeroExecuteTime, "Timelock not expired");
+
+        // enable permanent one-way switch
+        rescueToZeroEnabled = true;
+
+        uint256 executeAt = queuedRescueToZeroExecuteTime;
+        queuedRescueToZeroExecuteTime = 0;
+
+        emit RescueToZeroExecuted(executeAt);
+    }
+
     /// @notice Rescue third-party ERC20 tokens accidentally sent to this contract.
     /// Owner-only, non-reentrant, and explicitly disallows sweeping the Money token itself.
+    /// By default sending to address(0) is forbidden; a timelocked opt-in allows it.
     function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner nonReentrant {
         require(address(token) != address(this), "Cannot sweep Money token");
         require(amount > 0, "Amount > 0");
+
+        // default reject zero address unless the opt-in was enabled via the timelock
+        if (to == address(0)) {
+            require(rescueToZeroEnabled, "Rescue to zero not enabled");
+        }
 
         // use SafeERC20 to support tokens that do not return a bool on transfer
         token.safeTransfer(to, amount);
