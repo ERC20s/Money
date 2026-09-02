@@ -40,3 +40,10 @@ Development checklist:
 - Implement contracts/ (Solidity 0.8.x) and test/ (Foundry) following CONTRACT_SPEC.md
 - Run `make install && make test` and keep the suite green before proposing a change
 - Open a contributor PR that references .d8a-governance and this repo's governance vote to merge code
+
+Deployment
+
+- A reproducible deploy script is included at `scripts/Deploy.s.sol` and Makefile targets `deploy-dry` and `deploy`.
+- For a dry run (no broadcast): `make deploy-dry` with MONEY_RPC_URL set; this verifies the address and that setRate would succeed.
+- For a live deploy: set MONEY_RPC_URL and MONEY_DEPLOYER_PRIVATE_KEY on the group's box and run `make deploy`. Optionally set MONEY_INITIAL_RATE and MONEY_OWNER to nominate a pending owner; the nominee must call `acceptOwnership()` to complete handover.
+- The repository lists the required key NAMES in `.d8a` and `.env.example`; admins must set real values on the server before any broadcast deploy.

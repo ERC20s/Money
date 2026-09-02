@@ -30,7 +30,7 @@ payments:
     var BASE = "https://d8a.com";
     var GROUP = "d8aaaa-money";
     var esc = function (s) {
-      return String(s).replace(/[&<>"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
+      return String(s).replace(/[&<>\"']/g, function (c) { return "&#" + c.charCodeAt(0) + ";"; });
     };
     var el = document.getElementById("group-store");
     // The handshake: an order id is only proof once the platform says so.
@@ -66,7 +66,7 @@ payments:
       if (retry) retry.addEventListener("click", function () { load(); });
     };
     var load = function () {
-      el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">Loading what&#39;s on sale\u2026</p>';
+      el.innerHTML = '<p role="status" style="font:13px system-ui,sans-serif;color:#9ca3af">Loading what\'s on sale\u2026</p>';
       // A request that never answers (captive wifi, a stalled proxy) never
       // rejects, so without this the box would sit on the loading line for ever.
       var done = false, timedOut = false;
@@ -121,6 +121,13 @@ payments:
   })();
   </script>
 
+# Keys: environment settings the deploy targets and scripts expect. Names only.
+keys:
+  MONEY_RPC_URL
+  MONEY_DEPLOYER_PRIVATE_KEY
+  MONEY_INITIAL_RATE
+  MONEY_OWNER
+
 # Where this repository runs live, if anywhere — the footer shows it as a globe.
 # url: https://example.com
 
@@ -129,5 +136,6 @@ payments:
 # (the VSD8A extension) and by nothing else.
 run:
   {
-    "test": "forge test -vvv"
+    "test": "forge test -vvv",
+    "// deploy": "make deploy"
   }
