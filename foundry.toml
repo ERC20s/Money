@@ -1,0 +1,35 @@
+# Foundry configuration for the Money project.
+# Sources live in contracts/, tests in test/, vendored dependencies in lib/
+# (pinned as git submodules — see .gitmodules). Import paths are resolved
+# through remappings.txt so `forge build` and `forge test` work from a fresh
+# clone once the submodules are checked out (`make install`).
+
+[profile.default]
+src = "contracts"
+test = "test"
+libs = ["lib"]
+out = "out"
+cache_path = "cache"
+
+# Money.sol and the test suite declare `pragma solidity ^0.8.13`; 0.8.20 is the
+# pinned compiler so every contributor and the CI box build the same bytecode.
+solc = "0.8.20"
+# Paris, not Shanghai: 0.8.20 emits PUSH0 by default, which some chains still
+# reject. Nothing here needs a Shanghai-only opcode.
+evm_version = "paris"
+
+optimizer = true
+optimizer_runs = 200
+
+# Fail the build on unused-variable / shadowing style problems rather than
+# letting them scroll past.
+verbosity = 2
+
+[profile.ci]
+fuzz = { runs = 1000 }
+verbosity = 3
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = false

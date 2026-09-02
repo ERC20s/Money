@@ -1,0 +1,20 @@
+# Vendored dependencies — fetched at pinned tags by `make install`
+# (scripts/install-deps.sh), never committed.
+lib/
+
+# Foundry build output
+out/
+cache/
+broadcast/
+!broadcast/**/dry-run/
+
+# Local environment. Real values live on the group's box at /etc/d8a/keys.env
+# and reach the project through `d8a run -- <command>`; .env.example lists the
+# NAMES only.
+.env
+.env.local
+
+# Editors / OS
+.DS_Store
+.vscode/
+node_modules/
