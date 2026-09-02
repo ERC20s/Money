@@ -36,6 +36,7 @@ Security considerations
 - Reentrancy guards on buy() and withdrawal flows.
 - Use OpenZeppelin/ERC20 tested primitives where possible.
 - Explicit owner-only modifiers and events for pause/unpause, queueWithdrawal, executeWithdrawal.
+- Ownership is non-renounceable: renounceOwnership() is overridden to revert with "Ownership cannot be renounced". Because the only ETH exit (executeWithdrawal) needs a withdrawal that only the owner can queue, an ownerless contract would strand its whole ETH balance and leave pause() permanently on. transferOwnership() is unchanged, so ownership can still move to a multisig.
 
 File layout and toolchain
 

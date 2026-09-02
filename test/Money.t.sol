@@ -170,6 +170,56 @@ contract MoneyTest is Test {
         money.executeWithdrawal();
     }
 
+    // New test: ownership cannot be renounced, and the ETH exit stays usable afterwards
+    function testRenounceOwnershipReverts() public {
+        // the owner's own call must revert with the explicit message
+        vm.prank(owner);
+        vm.expectRevert(bytes("Ownership cannot be renounced"));
+        money.renounceOwnership();
+
+        // ownership is unchanged
+        assertEq(money.owner(), owner);
+
+        // a non-owner call still reverts on the onlyOwner check
+        vm.prank(alice);
+        vm.expectRevert();
+        money.renounceOwnership();
+        assertEq(money.owner(), owner);
+
+        // the withdrawal path is intact: queue 1 ether, wait out the timelock, execute
+        uint256 amount = 1 ether;
+        vm.prank(owner);
+        money.queueWithdrawal(amount);
+        assertEq(money.queuedAmount(), amount);
+        assertEq(money.queuedRecipient(), owner);
+
+        vm.warp(block.timestamp + 48 hours + 1);
+
+        uint256 ownerBefore = owner.balance;
+        money.executeWithdrawal();
+        assertEq(owner.balance, ownerBefore + amount);
+        assertEq(money.queuedAmount(), 0);
+        assertEq(money.queuedRecipient(), address(0));
+    }
+
+    // New test: ownership can still be handed to another account (e.g. a multisig)
+    function testTransferOwnershipStillWorks() public {
+        vm.prank(owner);
+        money.transferOwnership(alice);
+        assertEq(money.owner(), alice);
+
+        // the new owner also cannot renounce
+        vm.prank(alice);
+        vm.expectRevert(bytes("Ownership cannot be renounced"));
+        money.renounceOwnership();
+        assertEq(money.owner(), alice);
+
+        // and the new owner can exercise owner-only functions
+        vm.prank(alice);
+        money.setRate(2);
+        assertEq(money.rate(), 2);
+    }
+
     // New test: non-owner cannot redirect a queued withdrawal via queueWithdrawalTo
     function testQueueWithdrawalToOnlyOwner() public {
         vm.prank(alice);
