@@ -169,6 +169,27 @@ contract MoneyTest is Test {
         assertEq(token.balanceOf(address(0)), 500);
     }
 
+    // New: owner may cancel a queued enable before it executes
+    function testCancelQueuedEnableRescueToZero() public {
+        // queue the opt-in
+        vm.prank(owner);
+        money.queueEnableRescueToZero();
+
+        uint256 queued = money.queuedRescueToZeroExecuteTime();
+        assertGt(queued, 0);
+
+        // cancel it as the owner
+        vm.prank(owner);
+        money.cancelQueuedEnableRescueToZero();
+
+        // queued time should be reset
+        assertEq(money.queuedRescueToZeroExecuteTime(), 0);
+
+        // executing now should revert with the expected error
+        vm.expectRevert(bytes("No queued enable"));
+        money.executeEnableRescueToZero();
+    }
+
     function testSetRateOnlyOwnerAndBuyRevertsWhenZero() public {
         uint256 rate = 3;
         uint256 sendWei = 1 ether / 1000;

@@ -44,6 +44,7 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
     // events for rescue-to-zero timelock
     event RescueToZeroQueued(uint256 executeAfter);
     event RescueToZeroExecuted(uint256 executeAt);
+    event RescueToZeroCancelled(uint256 previousExecuteAfter);
 
     constructor() ERC20("Money", "MNY") {
         // initial supply 0, owner is deployer
@@ -212,6 +213,17 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
         emit RescueToZeroQueued(queuedRescueToZeroExecuteTime);
     }
 
+    /// @notice Cancel a queued enable for rescue-to-zero. Callable by the owner to retract a queued opt-in.
+    /// Mirrors cancelQueuedWithdrawal behaviour: owner may cancel even while paused.
+    function cancelQueuedEnableRescueToZero() external onlyOwner {
+        uint256 prev = queuedRescueToZeroExecuteTime;
+        require(prev != 0, "No queued enable");
+
+        queuedRescueToZeroExecuteTime = 0;
+
+        emit RescueToZeroCancelled(prev);
+    }
+
     /// @notice Execute the queued enable for rescue-to-zero. Callable by anyone after the timelock.
     function executeEnableRescueToZero() external nonReentrant whenNotPaused {
         require(queuedRescueToZeroExecuteTime != 0, "No queued enable");
@@ -231,20 +243,20 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
     /// By default sending to address(0) is forbidden; a timelocked opt-in allows it.
     function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner nonReentrant {
         require(address(token) != address(this), "Cannot sweep Money token");
-        require(amount > 0, "Amount > 0");
+        require(amount > 0, "Amount must be >0");
 
-        // default reject zero address unless the opt-in was enabled via the timelock
+        // disallow sending to zero unless opt-in has been enabled
         if (to == address(0)) {
-            require(rescueToZeroEnabled, "Rescue to zero not enabled");
+            require(rescueToZeroEnabled, "rescue to zero disabled");
         }
 
-        // use SafeERC20 to support tokens that do not return a bool on transfer
+        // Use SafeERC20 to handle non-standard ERC20s
         token.safeTransfer(to, amount);
-
         emit ERC20Rescued(address(token), to, amount);
     }
 
-    // Allow contract to receive ETH (so tests or others can fund it directly if needed)
-    receive() external payable { emit Deposit(msg.sender, msg.value); }
-    fallback() external payable { emit Deposit(msg.sender, msg.value); }
+    // receive ETH
+    receive() external payable {
+        emit Deposit(msg.sender, msg.value);
+    }
 }
