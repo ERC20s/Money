@@ -1,0 +1,15 @@
+# Foundry build output
+out/
+cache/
+broadcast/
+
+# Dependencies fetched by `forge install` — not vendored in this repository
+lib/
+
+# Local environment (values live on the box, never in git)
+.env
+.env.local
+
+# Editor / OS noise
+.DS_Store
+.vscode/
