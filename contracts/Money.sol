@@ -31,7 +31,7 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
     event WithdrawalCancelled(uint256 amount);
     event ERC20Rescued(address indexed token, address indexed to, uint256 amount);
     event RateChanged(uint256 newRate);
-    // Emit when contract receives ETH directly (receive/fallback)
+    // Emit when the contract is funded through deposit() (treasury funding, no tokens minted)
     event Deposit(address indexed from, uint256 amount);
 
     constructor() ERC20("Money", "MNY") {
@@ -176,7 +176,22 @@ contract Money is ERC20, Pausable, Ownable, ReentrancyGuard {
         emit ERC20Rescued(address(token), to, amount);
     }
 
-    // Allow contract to receive ETH (so tests or others can fund it directly if needed)
-    receive() external payable { emit Deposit(msg.sender, msg.value); }
-    fallback() external payable { emit Deposit(msg.sender, msg.value); }
+    /// @notice Explicitly fund the contract with ETH without minting tokens.
+    /// This is the only funding path: plain ETH sends and unknown-selector calls revert,
+    /// so a buyer who mis-encodes buy() gets their ETH back instead of silently losing it.
+    function deposit() external payable {
+        require(msg.value > 0, "Must send ETH");
+        emit Deposit(msg.sender, msg.value);
+    }
+
+    // ETH sent with empty calldata is almost always a mistake (a buyer expecting buy()).
+    // Reverting returns the funds instead of keeping them with no tokens minted.
+    receive() external payable {
+        revert("Use buy() or deposit()");
+    }
+
+    // Calls to an unknown selector (for example a stale buy(uint256) ABI) also revert.
+    fallback() external payable {
+        revert("Unknown function");
+    }
 }

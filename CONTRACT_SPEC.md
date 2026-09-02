@@ -27,6 +27,13 @@ Public API (required)
 - ownerWithdraw() that withdraws accumulated ETH to owner after timelock conditions are satisfied.
 - pause()/unpause() callable by owner to enable emergency pause of buy() and withdrawals.
 
+ETH entry points
+
+- buy() is the ONLY minting path: ETH in, tokens out, at the owner-set rate.
+- deposit() is the ONLY funding path: payable, requires msg.value > 0, emits Deposit, mints nothing. Use it for treasury funding and for test/ops setup.
+- receive() reverts with "Use buy() or deposit()" and fallback() reverts with "Unknown function". A plain ETH send, or a call against a stale ABI (for example the buy(uint256 rate) signature above), fails and the sender keeps their ETH instead of losing it with zero tokens minted.
+- Force-fed ETH (selfdestruct, block rewards) cannot be blocked by any contract, so balance-based checks must not assume the contract balance only grew through buy()/deposit().
+
 buy() unit normalization
 
 - The implementation must explicitly normalize units between wei and token decimals. Tests must show identical token quantities independent of wei/token-decimal differences.

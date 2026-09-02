@@ -73,9 +73,18 @@ contract MoneyTest is Test {
     function setUp() public {
         vm.prank(owner);
         money = new Money();
-        // fund contract so owner can withdraw later
+        // fund contract so owner can withdraw later (plain sends now revert, so use deposit())
         vm.deal(address(this), 10 ether);
-        payable(address(money)).transfer(5 ether);
+        money.deposit{value: 5 ether}();
+    }
+
+    /// @dev decode a standard Error(string) revert payload returned by a low-level call
+    function _revertReason(bytes memory data) internal pure returns (string memory) {
+        if (data.length < 68) return "";
+        assembly {
+            data := add(data, 0x04)
+        }
+        return abi.decode(data, (string));
     }
 
     function testBuyNormalizesUnits() public {
@@ -391,7 +400,7 @@ contract MoneyTest is Test {
 
         // fund the Money instance so it can attempt the transfer
         vm.deal(address(this), 2 ether);
-        payable(address(money2)).transfer(1 ether);
+        money2.deposit{value: 1 ether}();
 
         uint256 amount = 1 ether;
         // queue the withdrawal from the BadRecipient's context (so queuedRecipient will be address(bad))
@@ -418,37 +427,70 @@ contract MoneyTest is Test {
         assertEq(money2.queuedRecipient(), qRecipient);
     }
 
-    // New tests: verify Deposit event is emitted when contract receives ETH via receive() and fallback()
-    function testEmitDepositOnReceive() public {
+    // New test: a plain ETH send (empty calldata) must revert instead of being silently kept
+    function testPlainEthSendReverts() public {
         uint256 amt = 1 ether / 2; // 0.5 ETH
         address sender = address(0xC0FFEE);
         vm.deal(sender, amt);
 
+        uint256 contractBefore = address(money).balance;
+
         vm.prank(sender);
-        vm.expectEmit(true, false, false, true);
-        emit Money.Deposit(sender, amt);
+        (bool ok, bytes memory data) = address(money).call{value: amt}("");
 
-        // send ETH with empty calldata to trigger receive()
-        payable(address(money)).transfer(amt);
+        assertFalse(ok);
+        assertEq(_revertReason(data), "Use buy() or deposit()");
 
-        // contract balance should increase by amt (setUp funded 5 ether initially)
-        assertEq(address(money).balance, 5 ether + amt);
+        // no ETH was taken: the sender keeps it and no tokens were minted
+        assertEq(address(money).balance, contractBefore);
+        assertEq(sender.balance, amt);
+        assertEq(money.balanceOf(sender), 0);
+        assertEq(money.totalSupply(), 0);
     }
 
-    function testEmitDepositOnFallback() public {
+    // New test: a call with an unknown selector (e.g. a stale buy(uint256) ABI) must revert
+    function testUnknownSelectorWithValueReverts() public {
         uint256 amt = 1 ether / 4; // 0.25 ETH
         address sender = address(0xD00D);
         vm.deal(sender, amt);
 
+        uint256 contractBefore = address(money).balance;
+
         vm.prank(sender);
+        (bool ok, bytes memory data) = address(money).call{value: amt}(hex"12345678");
+
+        assertFalse(ok);
+        assertEq(_revertReason(data), "Unknown function");
+
+        assertEq(address(money).balance, contractBefore);
+        assertEq(sender.balance, amt);
+        assertEq(money.balanceOf(sender), 0);
+        assertEq(money.totalSupply(), 0);
+    }
+
+    // New test: deposit() is the explicit funding path — emits Deposit, mints nothing, rejects zero
+    function testDepositEmitsEventAndIncreasesBalance() public {
+        uint256 amt = 1 ether / 4; // 0.25 ETH
+        address sender = address(0xD00D);
+        vm.deal(sender, amt);
+
+        uint256 contractBefore = address(money).balance; // setUp funded 5 ether via deposit()
+
         vm.expectEmit(true, false, false, true);
         emit Money.Deposit(sender, amt);
 
-        // send ETH with non-empty calldata to trigger fallback()
-        (bool ok, ) = address(money).call{value: amt}(hex"1234");
-        require(ok, "call failed");
+        vm.prank(sender);
+        money.deposit{value: amt}();
 
-        assertEq(address(money).balance, 5 ether + amt);
+        assertEq(address(money).balance, contractBefore + amt);
+        // funding must not mint tokens
+        assertEq(money.balanceOf(sender), 0);
+        assertEq(money.totalSupply(), 0);
+
+        // a zero-value deposit is rejected
+        vm.prank(sender);
+        vm.expectRevert(bytes("Must send ETH"));
+        money.deposit{value: 0}();
     }
 
     // New tests for previewBuy
