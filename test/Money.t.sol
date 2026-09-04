@@ -214,4 +214,63 @@ contract MoneyTest is Test {
         uint256 expected = (sendWei * rate * (10 ** money.decimals())) / 1 ether;
         assertEq(money.balanceOf(alice), expected);
     }
+
+    // New tests for previewWeiForTokens added per proposal #129
+    function testPreviewWeiForTokensGuaranteesBuy() public {
+        uint256 rate = 2;
+        vm.prank(owner);
+        money.setRate(rate);
+
+        // request 3 tokens (in token units)
+        uint256 tokenUnits = 3 * (10 ** money.decimals());
+
+        (uint256 weiReq, bool ok) = money.previewWeiForTokens(tokenUnits);
+        assertTrue(ok, "preview should succeed");
+        assertGt(weiReq, 0);
+
+        // fund the buyer and execute a buy with minTokenAmount = tokenUnits
+        vm.deal(alice, weiReq);
+        vm.prank(alice);
+        money.buy{value: weiReq}(tokenUnits);
+
+        assertGe(money.balanceOf(alice), tokenUnits);
+    }
+
+    function testPreviewWeiForTokensRejectsOverflowAndZeroRate() public {
+        // while rate == 0 preview should fail
+        (uint256 w0, bool ok0) = money.previewWeiForTokens(1);
+        assertFalse(ok0);
+        assertEq(w0, 0);
+
+        // set a rate and request an enormous tokenUnits that would overflow numerator
+        vm.prank(owner);
+        money.setRate(1);
+
+        uint256 huge = type(uint256).max / 1 ether + 1;
+        (uint256 w1, bool ok1) = money.previewWeiForTokens(huge);
+        assertFalse(ok1);
+        assertEq(w1, 0);
+    }
+
+    function testPreviewBuyAndPreviewWeiRoundTrip() public {
+        uint256 rate = 5;
+        vm.prank(owner);
+        money.setRate(rate);
+
+        uint256 weiAmount = 1 ether / 1000; // 0.001 ETH
+        (uint256 tokenAmount, bool ok) = money.previewBuy(weiAmount);
+        assertTrue(ok);
+        assertGt(tokenAmount, 0);
+
+        (uint256 weiReq, bool ok2) = money.previewWeiForTokens(tokenAmount);
+        assertTrue(ok2);
+
+        // The required wei to get tokenAmount should not exceed the original wei used to compute it
+        assertLe(weiReq, weiAmount);
+
+        // And previewBuy on the computed wei should return at least tokenAmount (ceil/floor interplay)
+        (uint256 tokenAmount2, bool ok3) = money.previewBuy(weiReq);
+        assertTrue(ok3);
+        assertGe(tokenAmount2, tokenAmount);
+    }
 }
