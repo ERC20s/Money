@@ -123,6 +123,32 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
         return (computed, true);
     }
 
+    /// @notice Preview the minimal wei required to mint at least `tokenUnits` tokens.
+    /// Returns (weiRequired, wouldSucceed). Mirrors previewBuy's normalization and the
+    /// same conservative bounds: (0, false) is returned when the request cannot be
+    /// represented safely or when rate==0 or tokenUnits==0.
+    function previewWeiForTokens(uint256 tokenUnits) external view returns (uint256 weiRequired, bool wouldSucceed) {
+        if (rate == 0) return (0, false);
+        if (tokenUnits == 0) return (0, false);
+
+        uint256 tokenDecimalsFactor = 10 ** uint256(decimals());
+        uint256 maxMsgValue = type(uint256).max / MAX_RATE / tokenDecimalsFactor;
+
+        // denom = rate * tokenDecimalsFactor; fits because rate <= MAX_RATE and tokenDecimalsFactor is small
+        uint256 denom = rate * tokenDecimalsFactor;
+        // prevent overflow in numerator (tokenUnits * 1 ether)
+        if (tokenUnits > type(uint256).max / 1 ether) {
+            return (0, false);
+        }
+
+        uint256 numerator = tokenUnits * 1 ether;
+        // ceil division to ensure returned wei mints at least tokenUnits
+        uint256 weiReq = (numerator + denom - 1) / denom;
+        if (weiReq == 0) return (0, false);
+        if (weiReq > maxMsgValue) return (0, false);
+        return (weiReq, true);
+    }
+
     /// @notice Owner queues a withdrawal of ETH from contract. Needs executeWithdrawal after 48h.
     function queueWithdrawal(uint256 amount) external onlyOwner whenNotPaused {
         require(amount > 0, "Amount must be >0");
@@ -238,25 +264,28 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
         emit RescueToZeroExecuted(executeAt);
     }
 
-    /// @notice Rescue third-party ERC20 tokens accidentally sent to this contract.
-    /// Owner-only, non-reentrant, and explicitly disallows sweeping the Money token itself.
-    /// By default sending to address(0) is forbidden; a timelocked opt-in allows it.
-    function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner nonReentrant {
+    /// @notice Rescue an ERC20 from the contract to `to`. Only owner may call.
+    /// By default rescuing to address(0) is forbidden unless rescueToZeroEnabled has been set true
+    /// via the 48h timelocked enable. Uses SafeERC20 so non-standard ERC20s (no return) are supported.
+    function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner whenNotPaused {
         require(address(token) != address(this), "Cannot sweep Money token");
         require(amount > 0, "Amount must be >0");
-
-        // disallow sending to zero unless opt-in has been enabled
         if (to == address(0)) {
-            require(rescueToZeroEnabled, "rescue to zero disabled");
+            require(rescueToZeroEnabled, "Rescue to zero disabled");
         }
 
-        // Use SafeERC20 to handle non-standard ERC20s
+        // perform transfer using SafeERC20 which supports non-standard tokens
         token.safeTransfer(to, amount);
+
         emit ERC20Rescued(address(token), to, amount);
     }
 
-    // receive ETH
+    /// @notice Fallbacks to receive ETH and emit a Deposit event so off-chain tooling sees direct sends.
     receive() external payable {
+        emit Deposit(msg.sender, msg.value);
+    }
+
+    fallback() external payable {
         emit Deposit(msg.sender, msg.value);
     }
 }
