@@ -267,7 +267,7 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
     /// @notice Rescue an ERC20 from the contract to `to`. Only owner may call.
     /// By default rescuing to address(0) is forbidden unless rescueToZeroEnabled has been set true
     /// via the 48h timelocked enable. Uses SafeERC20 so non-standard ERC20s (no return) are supported.
-    function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner whenNotPaused {
+    function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner whenNotPaused nonReentrant {
         require(address(token) != address(this), "Cannot sweep Money token");
         require(amount > 0, "Amount must be >0");
         if (to == address(0)) {
