@@ -337,4 +337,88 @@ contract MoneyTest is Test {
         // contract balance still unchanged
         assertEq(address(money).balance, contractBalBefore);
     }
+
+    // Tests added per approved proposal #137: assert pause blocks user paths but owner cancels remain callable
+    function testPauseBlocksBuyAndQueueWithdrawal() public {
+        uint256 rate = 1;
+        uint256 sendWei = 1 ether / 1000; // 0.001 ETH
+
+        // owner sets a non-zero rate
+        vm.prank(owner);
+        money.setRate(rate);
+
+        // fund alice
+        vm.deal(alice, sendWei);
+
+        // owner pauses the contract
+        vm.prank(owner);
+        money.pause();
+
+        // while paused, buy should revert for a buyer
+        vm.prank(alice);
+        vm.expectRevert();
+        money.buy{value: sendWei}();
+
+        // while paused, owner queueWithdrawal and queueWithdrawalTo should revert
+        vm.prank(owner);
+        vm.expectRevert();
+        money.queueWithdrawal(1 ether);
+
+        vm.prank(owner);
+        vm.expectRevert();
+        money.queueWithdrawalTo(alice, 1 ether);
+
+        // owner unpauses
+        vm.prank(owner);
+        money.unpause();
+
+        // now buy succeeds
+        vm.prank(alice);
+        money.buy{value: sendWei}();
+        uint256 expected = (sendWei * rate * (10 ** money.decimals())) / 1 ether;
+        assertEq(money.balanceOf(alice), expected);
+
+        // and owner can queue a withdrawal
+        vm.prank(owner);
+        money.queueWithdrawal(1 ether);
+        assertEq(money.queuedAmount(), 1 ether);
+
+        // cleanup
+        vm.prank(owner);
+        money.cancelQueuedWithdrawal();
+    }
+
+    function testOwnerCanCancelQueuedWithdrawalWhilePaused() public {
+        // owner queues a withdrawal
+        vm.prank(owner);
+        money.queueWithdrawal(1 ether);
+        assertEq(money.queuedAmount(), 1 ether);
+
+        // owner pauses the contract
+        vm.prank(owner);
+        money.pause();
+
+        // owner must still be able to cancel the queued withdrawal while paused
+        vm.prank(owner);
+        money.cancelQueuedWithdrawal();
+        assertEq(money.queuedAmount(), 0);
+        assertEq(money.queuedExecuteTime(), 0);
+        assertEq(money.queuedRecipient(), address(0));
+    }
+
+    function testOwnerCanCancelQueuedEnableRescueWhilePaused() public {
+        // queue the rescue-to-zero opt-in as owner
+        vm.prank(owner);
+        money.queueEnableRescueToZero();
+        assertGt(money.queuedRescueToZeroExecuteTime(), 0);
+
+        // owner pauses the contract
+        vm.prank(owner);
+        money.pause();
+
+        // owner should still be able to cancel the queued enable while paused
+        vm.prank(owner);
+        money.cancelQueuedEnableRescueToZero();
+        assertEq(money.queuedRescueToZeroExecuteTime(), 0);
+    }
 }
