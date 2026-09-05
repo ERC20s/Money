@@ -210,6 +210,31 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
         emit WithdrawalCancelled(amount);
     }
 
+    /// @notice Return the number of seconds until the currently queued ETH withdrawal
+    /// may be executed. Returns 0 if there is no queued withdrawal or if the timelock
+    /// has already expired.
+    function timeUntilQueuedWithdrawal() external view returns (uint256) {
+        if (queuedAmount == 0) {
+            return 0;
+        }
+        if (block.timestamp >= queuedExecuteTime) {
+            return 0;
+        }
+        return queuedExecuteTime - block.timestamp;
+    }
+
+    /// @notice Return the number of seconds until the queued rescue-to-zero opt-in
+    /// may be executed. Returns 0 if none is queued or if the timelock has already expired.
+    function timeUntilQueuedRescueToZero() external view returns (uint256) {
+        if (queuedRescueToZeroExecuteTime == 0) {
+            return 0;
+        }
+        if (block.timestamp >= queuedRescueToZeroExecuteTime) {
+            return 0;
+        }
+        return queuedRescueToZeroExecuteTime - block.timestamp;
+    }
+
     /// @notice Pause buys and withdrawal operations.
     function pause() external onlyOwner {
         _pause();
