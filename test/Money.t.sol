@@ -39,6 +39,11 @@ contract NonStandardERC20 {
     }
 }
 
+contract RejectingRecipient {
+    fallback() external payable { revert("Recipient rejects"); }
+    receive() external payable { revert("Recipient rejects"); }
+}
+
 contract MoneyTest is Test {
     Money money;
     address owner = address(0xABCD);
@@ -284,5 +289,52 @@ contract MoneyTest is Test {
         (uint256 tokenAmount2, bool ok3) = money.previewBuy(weiReq);
         assertTrue(ok3);
         assertGe(tokenAmount2, tokenAmount);
+    }
+
+    // New test per proposal #135: ensure failing recipient leaves queue intact
+    function testExecuteWithdrawalRecipientRevertsLeavesQueueIntact() public {
+        uint256 amount = 1 ether;
+        // deploy a recipient that rejects ETH
+        RejectingRecipient rr = new RejectingRecipient();
+        address recipient = address(rr);
+
+        // record contract balance before queuing
+        uint256 contractBalBefore = address(money).balance;
+        assertGe(contractBalBefore, amount);
+
+        // owner queues a withdrawal to the rejecting recipient
+        vm.prank(owner);
+        money.queueWithdrawalTo(recipient, amount);
+
+        uint256 queuedAmountBefore = money.queuedAmount();
+        uint256 queuedExecuteTimeBefore = money.queuedExecuteTime();
+        address queuedRecipientBefore = money.queuedRecipient();
+
+        // advance to after the timelock
+        vm.warp(queuedExecuteTimeBefore + 1);
+
+        // executing the withdrawal should revert with Transfer failed
+        vm.expectRevert(bytes("Transfer failed"));
+        money.executeWithdrawal();
+
+        // queued state must remain unchanged
+        assertEq(money.queuedAmount(), queuedAmountBefore);
+        assertEq(money.queuedExecuteTime(), queuedExecuteTimeBefore);
+        assertEq(money.queuedRecipient(), queuedRecipientBefore);
+
+        // contract balance should be unchanged
+        assertEq(address(money).balance, contractBalBefore);
+
+        // owner can cancel the queued withdrawal afterwards
+        vm.prank(owner);
+        money.cancelQueuedWithdrawal();
+
+        // queued state is cleared
+        assertEq(money.queuedAmount(), 0);
+        assertEq(money.queuedExecuteTime(), 0);
+        assertEq(money.queuedRecipient(), address(0));
+
+        // contract balance still unchanged
+        assertEq(address(money).balance, contractBalBefore);
     }
 }
