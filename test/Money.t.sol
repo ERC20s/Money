@@ -77,11 +77,18 @@ contract MoneyTest is Test {
 
         assertEq(money.queuedRecipient(), owner);
 
+        // after queuing, timeUntilQueuedWithdrawal should be > 0
+        uint256 remaining = money.timeUntilQueuedWithdrawal();
+        assertGt(remaining, 0);
+
         vm.prank(owner);
         vm.expectRevert(bytes("Timelock not expired"));
         money.executeWithdrawal();
 
         vm.warp(block.timestamp + 48 hours + 1);
+
+        // after timelock has passed, timeUntilQueuedWithdrawal should be 0
+        assertEq(money.timeUntilQueuedWithdrawal(), 0);
 
         vm.prank(owner);
         money.executeWithdrawal();
@@ -178,12 +185,17 @@ contract MoneyTest is Test {
         uint256 queued = money.queuedRescueToZeroExecuteTime();
         assertGt(queued, 0);
 
+        // queued time should be non-zero and timeUntilQueuedRescueToZero should be > 0
+        uint256 remaining = money.timeUntilQueuedRescueToZero();
+        assertGt(remaining, 0);
+
         // cancel it as the owner
         vm.prank(owner);
         money.cancelQueuedEnableRescueToZero();
 
         // queued time should be reset
         assertEq(money.queuedRescueToZeroExecuteTime(), 0);
+        assertEq(money.timeUntilQueuedRescueToZero(), 0);
 
         // executing now should revert with the expected error
         vm.expectRevert(bytes("No queued enable"));
