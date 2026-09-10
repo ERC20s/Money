@@ -545,4 +545,31 @@ contract MoneyTest is Test {
         vm.prank(nominee2);
         money.setRate(5);
     }
+
+    // New test per approved proposal #145: ensure buy(minTokenAmount) reverts when owner reduces rate between preview and buy
+    function testBuyRevertsWhenRateDropsBetweenPreviewAndBuy() public {
+        uint256 highRate = 10;
+        uint256 lowRate = 1;
+        uint256 weiAmount = 1 ether / 1000; // 0.001 ETH
+
+        // fund alice so the buy can be attempted
+        vm.deal(alice, weiAmount);
+
+        // owner sets a high rate and alice computes a quote
+        vm.prank(owner);
+        money.setRate(highRate);
+
+        (uint256 tokenAmount, bool ok) = money.previewBuy(weiAmount);
+        assertTrue(ok, "previewBuy should succeed");
+        assertGt(tokenAmount, 0, "preview must return a non-zero token amount");
+
+        // owner lowers the rate before alice submits the buy
+        vm.prank(owner);
+        money.setRate(lowRate);
+
+        // alice attempts to buy insisting on at least the quoted amount and must be protected
+        vm.prank(alice);
+        vm.expectRevert(bytes("Insufficient tokens out"));
+        money.buy{value: weiAmount}(tokenAmount);
+    }
 }
