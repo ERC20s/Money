@@ -269,6 +269,23 @@ contract MoneyTest is Test {
         assertEq(w1, 0);
     }
 
+    // New test per approved proposal #143: ensure previewBuy rejects inputs that would overflow
+    function testPreviewBuyRejectsOverflow() public {
+        // set a non-zero rate so previewBuy proceeds past the rate==0 check
+        vm.prank(owner);
+        money.setRate(1);
+
+        // compute the conservative max msg.value the contract uses to avoid overflow
+        uint256 tokenDecimalsFactor = 10 ** uint256(money.decimals());
+        uint256 maxMsgValue = type(uint256).max / money.MAX_RATE() / tokenDecimalsFactor;
+
+        // ask for one more than the safe bound and expect previewBuy to report failure
+        uint256 probe = maxMsgValue + 1;
+        (uint256 tokenAmount, bool ok) = money.previewBuy(probe);
+        assertFalse(ok, "previewBuy should reject overflow inputs");
+        assertEq(tokenAmount, 0, "tokenAmount must be zero on failure");
+    }
+
     function testPreviewBuyAndPreviewWeiRoundTrip() public {
         uint256 rate = 5;
         vm.prank(owner);
