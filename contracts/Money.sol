@@ -115,6 +115,40 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
         emit Bought(msg.sender, msg.value, tokenAmount, rate);
     }
 
+    /// @notice Buy tokens and credit a different recipient. Like buy(), but mints to `recipient`.
+    /// @param recipient Address receiving the minted tokens. Must not be zero.
+    function buyTo(address recipient) external payable whenNotPaused nonReentrant {
+        require(recipient != address(0), "Recipient zero");
+        _buyTo(recipient, 0);
+    }
+
+    /// @notice Buy tokens with a slippage guard, crediting `recipient`.
+    /// @param recipient Address receiving the minted tokens. Must not be zero.
+    /// @param minTokenAmount Minimum acceptable token units out (same units as balanceOf).
+    function buyTo(address recipient, uint256 minTokenAmount) external payable whenNotPaused nonReentrant {
+        require(recipient != address(0), "Recipient zero");
+        _buyTo(recipient, minTokenAmount);
+    }
+
+    /// @dev Shared buyTo body. Mirrors _buy but mints to `recipient` instead of msg.sender.
+    function _buyTo(address recipient, uint256 minTokenAmount) private {
+        require(msg.value > 0, "Must send ETH to buy");
+        require(rate > 0, "Rate must be > 0");
+
+        uint256 tokenDecimalsFactor = 10 ** uint256(decimals());
+        uint256 maxMsgValue = type(uint256).max / MAX_RATE / tokenDecimalsFactor;
+        require(msg.value <= maxMsgValue, "msg.value too large");
+
+        uint256 tokenAmount = (msg.value * rate * tokenDecimalsFactor) / 1 ether;
+
+        require(tokenAmount > 0, "Token amount zero after normalization");
+        require(tokenAmount >= minTokenAmount, "Insufficient tokens out");
+
+        _mint(recipient, tokenAmount);
+        // record the payer as the buyer in the Bought event for compatibility with off-chain tooling
+        emit Bought(msg.sender, msg.value, tokenAmount, rate);
+    }
+
     /// @notice Preview a buy without affecting state. Returns (tokenAmount, wouldSucceed).
     /// Implementation mirrors buy() but checks the conservative maxMsgValue bound before any
     /// multiplication so the view never overflows or reverts for extreme inputs.

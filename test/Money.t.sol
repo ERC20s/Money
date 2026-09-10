@@ -601,4 +601,55 @@ contract MoneyTest is Test {
         vm.expectRevert(bytes("Insufficient tokens out"));
         money.buy{value: weiAmount}(tokenAmount);
     }
+
+    // New tests for approved proposal #149: buyTo behaviour
+    function testBuyToCreditsRecipient() public {
+        uint256 rate = 7;
+        uint256 weiAmount = 1 ether / 1000; // 0.001 ETH
+
+        // fund alice (payer)
+        vm.deal(alice, weiAmount);
+
+        // set rate as owner
+        vm.prank(owner);
+        money.setRate(rate);
+
+        address recipient = address(0xB0B);
+
+        // alice buys for recipient
+        vm.prank(alice);
+        money.buyTo{value: weiAmount}(recipient);
+
+        uint256 expected = (weiAmount * rate * (10 ** money.decimals())) / 1 ether;
+        assertEq(money.balanceOf(recipient), expected);
+        // buyer should not receive tokens
+        assertEq(money.balanceOf(alice), 0);
+    }
+
+    function testBuyToRevertsWhenRateDropsBetweenPreviewAndBuy() public {
+        uint256 highRate = 10;
+        uint256 lowRate = 1;
+        uint256 weiAmount = 1 ether / 1000; // 0.001 ETH
+
+        // fund alice so the buy can be attempted
+        vm.deal(alice, weiAmount);
+
+        // owner sets a high rate and alice computes a quote
+        vm.prank(owner);
+        money.setRate(highRate);
+
+        (uint256 tokenAmount, bool ok) = money.previewBuy(weiAmount);
+        assertTrue(ok, "previewBuy should succeed");
+        assertGt(tokenAmount, 0, "preview must return a non-zero token amount");
+
+        // owner lowers the rate before alice submits the buy
+        vm.prank(owner);
+        money.setRate(lowRate);
+
+        // alice attempts to buy insisting on at least the quoted amount and must be protected
+        address recipient = address(0xD0D);
+        vm.prank(alice);
+        vm.expectRevert(bytes("Insufficient tokens out"));
+        money.buyTo{value: weiAmount}(recipient, tokenAmount);
+    }
 }
