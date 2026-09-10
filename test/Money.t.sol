@@ -57,6 +57,25 @@ contract MoneyTest is Test {
         payable(address(money)).transfer(5 ether);
     }
 
+    // Test that direct ETH transfers (receive/fallback) emit Deposit(from, amount)
+    function testDirectSendEmitsDeposit() public {
+        uint256 amount = 1 ether;
+        // fund an EOA that will send ETH directly to the contract
+        vm.deal(alice, amount);
+
+        uint256 before = address(money).balance;
+
+        // We expect the Deposit event with sender and amount to be emitted
+        vm.expectEmit(true, false, false, true);
+        emit Money.Deposit(alice, amount);
+
+        vm.prank(alice);
+        payable(address(money)).transfer(amount);
+
+        // contract balance should have increased by the sent amount
+        assertEq(address(money).balance, before + amount);
+    }
+
     function testBuyNormalizesUnits() public {
         uint256 rate = 2;
         uint256 sendWei = 1 ether / 1000; // 0.001 ETH
