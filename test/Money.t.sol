@@ -421,4 +421,111 @@ contract MoneyTest is Test {
         money.cancelQueuedEnableRescueToZero();
         assertEq(money.queuedRescueToZeroExecuteTime(), 0);
     }
+
+    // Tests for two-step ownership handover and access control per proposal #141
+    function testOwnershipNominationDoesNotTransferRights() public {
+        address nominee = address(0xC0FFEE);
+
+        // owner nominates nominee
+        vm.prank(owner);
+        money.transferOwnership(nominee);
+
+        // pending owner should be recorded
+        assertEq(money.pendingOwner(), nominee);
+
+        // nominee must NOT be able to call owner-only functions yet
+        vm.prank(nominee);
+        vm.expectRevert();
+        money.setRate(1);
+
+        vm.prank(nominee);
+        vm.expectRevert();
+        money.queueWithdrawal(1 ether);
+
+        vm.prank(nominee);
+        vm.expectRevert();
+        money.pause();
+
+        // current owner retains owner powers
+        vm.prank(owner);
+        money.setRate(2);
+
+        vm.prank(owner);
+        money.pause();
+
+        vm.prank(owner);
+        money.unpause();
+    }
+
+    function testAcceptOwnershipTransfersRights() public {
+        address nominee = address(0xC0FFEE);
+
+        // nominate
+        vm.prank(owner);
+        money.transferOwnership(nominee);
+
+        // nominee accepts
+        vm.prank(nominee);
+        money.acceptOwnership();
+
+        // nominee is now owner and may call owner-only functions
+        vm.prank(nominee);
+        money.setRate(3);
+
+        vm.prank(nominee);
+        money.pause();
+
+        // previous owner has lost owner privileges
+        vm.prank(owner);
+        vm.expectRevert();
+        money.setRate(4);
+
+        // cleanup: new owner unpauses
+        vm.prank(nominee);
+        money.unpause();
+    }
+
+    function testTransferOwnershipZeroCancelsPending() public {
+        address nominee = address(0xDEADBE);
+
+        vm.prank(owner);
+        money.transferOwnership(nominee);
+        assertEq(money.pendingOwner(), nominee);
+
+        // cancel nomination
+        vm.prank(owner);
+        money.transferOwnership(address(0));
+        assertEq(money.pendingOwner(), address(0));
+
+        // nominee cannot accept anymore
+        vm.prank(nominee);
+        vm.expectRevert();
+        money.acceptOwnership();
+    }
+
+    function testSecondTransferReplacesPending() public {
+        address nominee1 = address(0xAAAA);
+        address nominee2 = address(0xBBBB);
+
+        vm.prank(owner);
+        money.transferOwnership(nominee1);
+        assertEq(money.pendingOwner(), nominee1);
+
+        // new nomination replaces the earlier one
+        vm.prank(owner);
+        money.transferOwnership(nominee2);
+        assertEq(money.pendingOwner(), nominee2);
+
+        // old nominee cannot accept
+        vm.prank(nominee1);
+        vm.expectRevert();
+        money.acceptOwnership();
+
+        // new nominee can accept and becomes owner
+        vm.prank(nominee2);
+        money.acceptOwnership();
+
+        vm.prank(nominee2);
+        money.setRate(5);
+    }
 }
