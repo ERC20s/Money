@@ -72,6 +72,98 @@ contract MoneyTest is Test {
         assertEq(money.balanceOf(alice), expected);
     }
 
+    // New: contractStatus view returns a bundle of public read values matching internal state
+    function testContractStatusReflectsStateTransitions() public {
+        // initial state: rate == 0, rescueToZeroEnabled == false, queued amounts zero
+        (
+            uint256 r0,
+            uint8 d0,
+            uint256 bal0,
+            bool rescue0,
+            uint256 qAmount0,
+            uint256 qExec0,
+            address qRecipient0,
+            uint256 qRescueExec0,
+            uint256 maxSafe0
+        ) = money.contractStatus();
+
+        assertEq(r0, 0);
+        assertEq(d0, money.decimals());
+        assertEq(bal0, address(money).balance);
+        assertFalse(rescue0);
+        assertEq(qAmount0, 0);
+        assertEq(qExec0, 0);
+        assertEq(qRecipient0, address(0));
+        assertEq(qRescueExec0, 0);
+        assertGt(maxSafe0, 0);
+
+        // set rate
+        vm.prank(owner);
+        money.setRate(5);
+
+        // queue withdrawal
+        vm.prank(owner);
+        money.queueWithdrawal(1 ether);
+
+        // queue rescue enable
+        vm.prank(owner);
+        money.queueEnableRescueToZero();
+
+        // check status after changes
+        (
+            uint256 r1,
+            uint8 d1,
+            uint256 bal1,
+            bool rescue1,
+            uint256 qAmount1,
+            uint256 qExec1,
+            address qRecipient1,
+            uint256 qRescueExec1,
+            uint256 maxSafe1
+        ) = money.contractStatus();
+
+        assertEq(r1, 5);
+        assertEq(d1, money.decimals());
+        assertEq(bal1, address(money).balance);
+        assertFalse(rescue1); // not yet executed
+        assertEq(qAmount1, 1 ether);
+        assertEq(qRecipient1, owner);
+        assertGt(qExec1, 0);
+        assertGt(qRescueExec1, 0);
+        assertGt(maxSafe1, 0);
+
+        // advance past timelocks and ensure execute flips rescue flag and executeWithdrawal succeeds
+        vm.warp(block.timestamp + 48 hours + 1);
+
+        // execute enable rescue
+        money.executeEnableRescueToZero();
+        // execute withdrawal
+        vm.prank(owner);
+        money.executeWithdrawal();
+
+        (
+            uint256 r2,
+            uint8 d2,
+            uint256 bal2,
+            bool rescue2,
+            uint256 qAmount2,
+            uint256 qExec2,
+            address qRecipient2,
+            uint256 qRescueExec2,
+            uint256 maxSafe2
+        ) = money.contractStatus();
+
+        assertEq(r2, 5);
+        assertEq(d2, money.decimals());
+        assertEq(bal2, address(money).balance);
+        assertTrue(rescue2);
+        assertEq(qAmount2, 0);
+        assertEq(qExec2, 0);
+        assertEq(qRecipient2, address(0));
+        assertEq(qRescueExec2, 0);
+        assertGt(maxSafe2, 0);
+    }
+
     function testQueueAndExecuteWithdrawalTimelock() public {
         uint256 contractBal = address(money).balance;
         assertGt(contractBal, 0);
