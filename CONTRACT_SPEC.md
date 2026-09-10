@@ -22,15 +22,20 @@ Assumptions (to be confirmed in PR discussion)
 
 Public API (required)
 
-- Full ERC20 interface (name, symbol, decimals, totalSupply, balanceOf, transfer, approve, allowance, transferFrom).
+- Full ERC20 interface (name, symbol, decimals, totalSupply, balanceOf, transfer, approve, allowance, transferFrom). decimals() is overridden to 6 to force explicit wei/token normalization.
 - A payable buy() function that mints tokens in exchange for ETH sent, at the owner-set `rate`. Kept for backwards compatibility; it has no slippage protection.
 - A payable buy(uint256 minTokenAmount) that mints as buy() does but reverts with "Insufficient tokens out" unless at least `minTokenAmount` token units are minted. This is the recommended entry point: it binds a quote from previewBuy(weiAmount) to the trade, so an owner rate change mined between quote and execution cannot shortchange the buyer.
 - previewBuy(uint256 weiAmount) view returning (tokenAmount, wouldSucceed) — the quote a caller passes as `minTokenAmount`.
+- previewWeiForTokens(uint256 tokenUnits) view returning (weiRequired, wouldSucceed) — the minimum wei (ceil-divided) that mints at least `tokenUnits`, for a caller who wants a target token amount rather than a target spend.
 - Both buy entry points carry whenNotPaused and nonReentrant and share one private `_buy(uint256 minTokenAmount)` body, so the reentrancy guard is entered exactly once per call.
-- ownerWithdraw() that withdraws accumulated ETH to owner after timelock conditions are satisfied.
-- pause()/unpause() callable by owner to enable emergency pause of buy() and withdrawals.
+- setRate(uint256 newRate) — onlyOwner, requires 0 < newRate <= MAX_RATE (MAX_RATE is a constant cap of 1e12 tokens per ETH, chosen to keep the multiplication in `_buy`/previewBuy/previewWeiForTokens from overflowing), emits RateChanged.
+- No ownerWithdraw(). ETH leaves the contract only through the queued-withdrawal path: queueWithdrawal(uint256 amount) and queueWithdrawalTo(address recipient, uint256 amount), both onlyOwner and whenNotPaused, record one pending withdrawal (amount, recipient, and executeAfter = now + TIMELOCK) and emit WithdrawalQueued; a second queue call reverts with "Existing queued withdrawal" until the pending one is executed or cancelled. executeWithdrawal() is permissionless (anyone may call it) and whenNotPaused; it reverts "Timelock not expired" before executeAfter, sends the ETH, and only clears the queued state on success, so a reverting recipient leaves the entry intact to retry or cancel. cancelQueuedWithdrawal() is onlyOwner and callable even while paused, for emergency retraction. timeUntilQueuedWithdrawal() view returns the seconds remaining, or 0 when there is nothing queued or the timelock has expired.
+- pause()/unpause() — onlyOwner. While paused: buy(), buy(minTokenAmount), queueWithdrawal, queueWithdrawalTo, executeWithdrawal, queueEnableRescueToZero, executeEnableRescueToZero and rescueERC20 all revert; cancelQueuedWithdrawal and cancelQueuedEnableRescueToZero remain callable by the owner so a queued action can still be retracted during an incident.
+- rescueERC20(IERC20 token, address to, uint256 amount) — onlyOwner, whenNotPaused, nonReentrant. Reverts "Cannot sweep Money token" if `token` is this contract, and reverts "Rescue to zero disabled" if `to == address(0)` unless the one-way `rescueToZeroEnabled` switch has been turned on. Uses OpenZeppelin SafeERC20 so non-standard (no-bool-return) tokens are supported. Emits ERC20Rescued.
+- Rescue-to-zero opt-in timelock, mirroring the withdrawal pattern: queueEnableRescueToZero() (onlyOwner, whenNotPaused) records queuedRescueToZeroExecuteTime = now + TIMELOCK and emits RescueToZeroQueued; cancelQueuedEnableRescueToZero() (onlyOwner, callable while paused) clears it and emits RescueToZeroCancelled; executeEnableRescueToZero() (permissionless, whenNotPaused, nonReentrant) sets the permanent public flag `rescueToZeroEnabled` to true after the timelock and emits RescueToZeroExecuted. timeUntilQueuedRescueToZero() view returns the seconds remaining, or 0 when nothing is queued or the timelock has expired.
 - Two-step ownership handover (OpenZeppelin Ownable2Step): transferOwnership(newOwner) only records a pending owner and emits OwnershipTransferStarted; the current owner keeps every owner power until the nominee calls acceptOwnership(). pendingOwner() exposes the nomination. transferOwnership(address(0)) clears a pending handover, and a later transferOwnership replaces it. Any caller other than the pending owner gets "Ownable2Step: caller is not the new owner".
 - renounceOwnership() is disabled: it reverts with "Ownership cannot be renounced" for every caller, owner included.
+- receive() and fallback() both accept plain ETH transfers and emit Deposit(from, amount), so off-chain tooling sees ETH that arrives outside buy().
 
 buy() unit normalization
 
@@ -38,10 +43,12 @@ buy() unit normalization
 
 Security considerations
 
-- Reentrancy guards on buy() and withdrawal flows.
-- Use OpenZeppelin/ERC20 tested primitives where possible.
-- Explicit owner-only modifiers and events for pause/unpause, queueWithdrawal, executeWithdrawal.
-- Ownership is the single point of failure for the ETH the contract custodies: queueWithdrawal, queueWithdrawalTo, cancelQueuedWithdrawal, setRate, pause/unpause and rescueERC20 are all onlyOwner. Handover is therefore two-step and never one-shot — a mistyped address, a wrong-chain address or a contract that cannot call acceptOwnership() is simply never accepted, and the sitting owner keeps control. Ownership cannot be renounced, so owner() can never become address(0) and strand the balance.
+- Reentrancy guards: buy(), buy(minTokenAmount) (via shared _buy), executeWithdrawal(), executeEnableRescueToZero() and rescueERC20() all carry nonReentrant.
+- Use OpenZeppelin/ERC20 tested primitives where possible (ERC20, Pausable, Ownable2Step, ReentrancyGuard, SafeERC20).
+- Explicit owner-only modifiers and events for pause/unpause, queueWithdrawal/queueWithdrawalTo, cancelQueuedWithdrawal, setRate, queueEnableRescueToZero/cancelQueuedEnableRescueToZero and rescueERC20.
+- Ownership is the single point of failure for the ETH and any stray ERC20 the contract custodies: queueWithdrawal, queueWithdrawalTo, cancelQueuedWithdrawal, setRate, pause/unpause, queueEnableRescueToZero, cancelQueuedEnableRescueToZero and rescueERC20 are all onlyOwner. Handover is therefore two-step and never one-shot — a mistyped address, a wrong-chain address or a contract that cannot call acceptOwnership() is simply never accepted, and the sitting owner keeps control. Ownership cannot be renounced, so owner() can never become address(0) and strand the balance.
+- rescueERC20 can never sweep the Money token itself, and can only send to address(0) after the owner has queued and, 48 hours later, executed a one-way opt-in (queueEnableRescueToZero / executeEnableRescueToZero) — a deliberate speed bump against an accidental or coerced burn-by-rescue.
+- A queued withdrawal that hits a reverting or gas-griefing recipient is not lost: executeWithdrawal() only clears state on a successful call, so the owner can cancelQueuedWithdrawal() and requeue to a working address; cancelQueuedWithdrawal and cancelQueuedEnableRescueToZero both stay callable while paused so an incident cannot lock in a queued action.
 - Trade-off accepted deliberately: any deploy or ops runbook must call acceptOwnership() from the new owner to finish a handover, and the contract deviates from ERC-173 tooling that expects renounceOwnership() to succeed.
 
 File layout and toolchain
@@ -52,8 +59,11 @@ Prioritized test matrix
 
 - buy() normalization tests
 - buy(minTokenAmount) slippage tests: succeeds when a previewBuy quote is met; reverts with "Insufficient tokens out" when the owner lowers the rate between quote and buy, minting nothing; accepts a rate that moved in the buyer's favour; still blocked while paused; legacy buy() behaviour unchanged
-- withdraw timelock enqueue/execute tests
-- pause/resume blocks buys and withdrawals
+- previewWeiForTokens tests: returned wei mints at least the requested token amount (ceil division), and (0, false) for rate==0, tokenUnits==0 or an input that would overflow
+- withdraw timelock enqueue/execute tests, including a case where the recipient's receive reverts: executeWithdrawal reverts "Transfer failed" and the queued withdrawal remains in place for the owner to cancel or retry, rather than being silently cleared
+- pause/resume tests: pause blocks buy(), buy(minTokenAmount), queueWithdrawal, queueWithdrawalTo and executeWithdrawal; cancelQueuedWithdrawal still succeeds for the owner while paused; unpause restores normal operation
+- rescue-to-zero timelock tests: rescueERC20(to = address(0)) reverts "Rescue to zero disabled" before the opt-in; queueEnableRescueToZero/executeEnableRescueToZero enable it only after TIMELOCK has elapsed; cancelQueuedEnableRescueToZero retracts a queued opt-in, including while paused; rescueERC20 reverts "Cannot sweep Money token" for the Money token itself and is blocked entirely while paused; rescueERC20 carries nonReentrant
+- timeUntilQueuedWithdrawal / timeUntilQueuedRescueToZero view tests: 0 when nothing is queued, a positive countdown before the timelock, 0 once it has elapsed
 - owner-only access tests and basic ERC20 unit tests
 - ownership handover tests: transferOwnership only nominates (old owner still queues and executes a withdrawal, nominee is refused by setRate/queueWithdrawal/pause); acceptOwnership reverts for anyone but the pending owner; acceptOwnership moves control and the new owner can queue and execute; transferOwnership(address(0)) cancels a pending handover; a second nomination replaces the first; renounceOwnership reverts for owner and non-owner with the contract's ETH still withdrawable
 
