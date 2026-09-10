@@ -352,6 +352,31 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
         emit ERC20Rescued(address(token), to, amount);
     }
 
+    /// @notice Return a bundle of read-only contract status useful for frontends.
+    /// @dev Mirrors internal conservative max msg.value calculation to expose the same bound UIs use.
+    function contractStatus() external view returns (
+        uint256 _rate,
+        uint8 _decimals,
+        uint256 _ethBalance,
+        bool _rescueToZeroEnabled,
+        uint256 _queuedAmount,
+        uint256 _queuedExecuteTime,
+        address _queuedRecipient,
+        uint256 _queuedRescueToZeroExecuteTime,
+        uint256 _maxSafeWei
+    ) {
+        _rate = rate;
+        _decimals = decimals();
+        _ethBalance = address(this).balance;
+        _rescueToZeroEnabled = rescueToZeroEnabled;
+        _queuedAmount = queuedAmount;
+        _queuedExecuteTime = queuedExecuteTime;
+        _queuedRecipient = queuedRecipient;
+        _queuedRescueToZeroExecuteTime = queuedRescueToZeroExecuteTime;
+        uint256 tokenDecimalsFactor = 10 ** uint256(_decimals);
+        _maxSafeWei = type(uint256).max / MAX_RATE / tokenDecimalsFactor;
+    }
+
     /// @notice Fallbacks to receive ETH and emit a Deposit event so off-chain tooling sees direct sends.
     receive() external payable {
         emit Deposit(msg.sender, msg.value);
