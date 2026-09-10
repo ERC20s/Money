@@ -308,6 +308,35 @@ contract MoneyTest is Test {
         assertGe(tokenAmount2, tokenAmount);
     }
 
+    // Tests for approved proposal #147: ownerMint behaviour
+    function testOwnerMintOnlyOwnerAndEffects() public {
+        uint256 amount = 100 * (10 ** money.decimals());
+
+        // non-owner cannot call ownerMint
+        vm.prank(alice);
+        vm.expectRevert();
+        money.ownerMint(alice, amount);
+
+        // zero recipient rejected
+        vm.prank(owner);
+        vm.expectRevert(bytes("Recipient zero"));
+        money.ownerMint(address(0), amount);
+
+        // zero amount rejected
+        vm.prank(owner);
+        vm.expectRevert(bytes("Amount must be >0"));
+        money.ownerMint(alice, 0);
+
+        // owner may mint to alice
+        vm.prank(owner);
+        vm.expectEmit(true, true, false, true);
+        emit Money.Minted(alice, amount);
+        vm.prank(owner);
+        money.ownerMint(alice, amount);
+
+        assertEq(money.balanceOf(alice), amount);
+    }
+
     // New test per proposal #135: ensure failing recipient leaves queue intact
     function testExecuteWithdrawalRecipientRevertsLeavesQueueIntact() public {
         uint256 amount = 1 ether;

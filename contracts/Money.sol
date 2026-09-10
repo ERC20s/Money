@@ -40,6 +40,8 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
     event RateChanged(uint256 newRate);
     // Emit when contract receives ETH directly (receive/fallback)
     event Deposit(address indexed from, uint256 amount);
+    // Owner-only minting for off-chain sales: minimal, auditable mint endpoint
+    event Minted(address indexed to, uint256 amount);
 
     // events for rescue-to-zero timelock
     event RescueToZeroQueued(uint256 executeAfter);
@@ -48,6 +50,17 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
 
     constructor() ERC20("Money", "MNY") {
         // initial supply 0, owner is deployer
+    }
+
+    /// @notice Owner-only mint for off-chain sales. Only owner may call.
+    /// @dev Minimal, auditable: guarded by onlyOwner, nonReentrant and whenNotPaused.
+    /// Emits Minted(to, amount). Does not alter other invariants.
+    function ownerMint(address to, uint256 amount) external onlyOwner nonReentrant whenNotPaused {
+        require(to != address(0), "Recipient zero");
+        require(amount > 0, "Amount must be >0");
+
+        _mint(to, amount);
+        emit Minted(to, amount);
     }
 
     // Use 6 decimals to force explicit normalization between wei and token units
