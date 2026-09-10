@@ -343,6 +343,21 @@ contract MoneyTest is Test {
         assertEq(money.balanceOf(alice), expected);
     }
 
+    // New test per approved proposal #157: assert setRate emits RateChanged and enforces MAX_RATE
+    function testSetRateEnforcesMaxAndEmitsEvent() public {
+        // owner sets rate to MAX_RATE and we expect RateChanged to be emitted
+        vm.prank(owner);
+        vm.expectEmit(true, false, false, true);
+        emit Money.RateChanged(money.MAX_RATE());
+        vm.prank(owner);
+        money.setRate(money.MAX_RATE());
+
+        // values above MAX_RATE must revert
+        vm.prank(owner);
+        vm.expectRevert();
+        money.setRate(money.MAX_RATE() + 1);
+    }
+
     // New tests for previewWeiForTokens added per proposal #129
     function testPreviewWeiForTokensGuaranteesBuy() public {
         uint256 rate = 2;
