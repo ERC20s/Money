@@ -183,6 +183,10 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
 
         // denom = rate * tokenDecimalsFactor; fits because rate <= MAX_RATE and tokenDecimalsFactor is small
         uint256 denom = rate * tokenDecimalsFactor;
+        // guard against multiplication overflow when computing denom
+        if (denom / tokenDecimalsFactor != rate) {
+            return (0, false);
+        }
         // prevent overflow in numerator (tokenUnits * 1 ether)
         if (tokenUnits > type(uint256).max / 1 ether) {
             return (0, false);
@@ -340,6 +344,7 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
     /// By default rescuing to address(0) is forbidden unless rescueToZeroEnabled has been set true
     /// via the 48h timelocked enable. Uses SafeERC20 so non-standard ERC20s (no return) are supported.
     function rescueERC20(IERC20 token, address to, uint256 amount) external onlyOwner whenNotPaused nonReentrant {
+        require(address(token) != address(0), "Token address cannot be zero");
         require(address(token) != address(this), "Cannot sweep Money token");
         require(amount > 0, "Amount must be >0");
         if (to == address(0)) {
@@ -374,6 +379,12 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
         _queuedRecipient = queuedRecipient;
         _queuedRescueToZeroExecuteTime = queuedRescueToZeroExecuteTime;
         uint256 tokenDecimalsFactor = 10 ** uint256(_decimals);
+        // guard against overflow when computing tokenDecimalsFactor (10 ** decimals)
+        if (_decimals > 77) {
+            // decimals too large: return zero to indicate an unusable _maxSafeWei rather than revert
+            _maxSafeWei = 0;
+            return (_rate, _decimals, _ethBalance, _rescueToZeroEnabled, _queuedAmount, _queuedExecuteTime, _queuedRecipient, _queuedRescueToZeroExecuteTime, _maxSafeWei);
+        }
         _maxSafeWei = type(uint256).max / MAX_RATE / tokenDecimalsFactor;
     }
 

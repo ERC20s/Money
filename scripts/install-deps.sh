@@ -23,7 +23,7 @@ set -euo pipefail
 FORGE_STD_TAG="v1.9.4"
 OZ_TAG="v4.9.6"
 
-cd "$(dirname "$0")/.."
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/.."
 
 if ! command -v git >/dev/null 2>&1; then
   echo "error: git is required" >&2
@@ -44,7 +44,7 @@ fetch() {
     return
   fi
 
-  git -C "$dest" checkout --quiet "$tag"
+  git -C "$dest" checkout --force --quiet "$tag"
   git -C "$dest" submodule update --init --recursive --depth 1
 }
 
