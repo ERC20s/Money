@@ -594,6 +594,46 @@ contract MoneyTest is Test {
         assertEq(money.queuedRescueToZeroExecuteTime(), 0);
     }
 
+    // New tests per approved proposal #162: ensure rescue paths are blocked while paused
+    function testRescueERC20RevertsWhilePaused() public {
+        // deploy an ERC20 and mint tokens to the Money contract
+        SimpleERC20 token = new SimpleERC20("TKN", "TKN");
+        token.mint(address(money), 1000);
+
+        // owner pauses the contract
+        vm.prank(owner);
+        money.pause();
+
+        // owner rescue should revert while paused
+        vm.prank(owner);
+        vm.expectRevert();
+        money.rescueERC20(IERC20(address(token)), owner, 1000);
+    }
+
+    function testExecuteEnableRescueRevertsWhilePaused() public {
+        // owner queues the opt-in
+        vm.prank(owner);
+        money.queueEnableRescueToZero();
+        assertGt(money.queuedRescueToZeroExecuteTime(), 0);
+
+        // advance past the timelock so execute would otherwise succeed
+        vm.warp(block.timestamp + 48 hours + 1);
+
+        // owner pauses the contract
+        vm.prank(owner);
+        money.pause();
+
+        // execute should revert while paused
+        vm.expectRevert();
+        money.executeEnableRescueToZero();
+
+        // cleanup: unpause and cancel the queued enable so test leaves no lingering state
+        vm.prank(owner);
+        money.unpause();
+        vm.prank(owner);
+        money.cancelQueuedEnableRescueToZero();
+    }
+
     // Tests for two-step ownership handover and access control per proposal #141
     function testOwnershipNominationDoesNotTransferRights() public {
         address nominee = address(0xC0FFEE);
