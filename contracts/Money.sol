@@ -2,6 +2,7 @@
 pragma solidity ^0.8.13;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
@@ -12,7 +13,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 /// @dev Ownership is TWO-STEP (Ownable2Step): transferOwnership() only nominates a pending owner
 /// and the nominee must call acceptOwnership() to take control, so a mistyped or unreachable
 /// address can never take ownership of the contract's ETH. Ownership is also non-renounceable.
-contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
+contract Money is ERC20, ERC20Permit, Pausable, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant TIMELOCK = 48 hours;
@@ -48,7 +49,7 @@ contract Money is ERC20, Pausable, Ownable2Step, ReentrancyGuard {
     event RescueToZeroExecuted(uint256 executeAt);
     event RescueToZeroCancelled(uint256 previousExecuteAfter);
 
-    constructor() ERC20("Money", "MNY") {
+    constructor() ERC20("Money", "MNY") ERC20Permit("Money") {
         // initial supply 0, owner is deployer
     }
 
