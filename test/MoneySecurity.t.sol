@@ -25,6 +25,30 @@ contract ReenteringRecipient {
     }
 }
 
+/// @dev Recipient that reads Money's queued-withdrawal state from inside its receive() hook, i.e.
+/// while executeWithdrawal() is paying it. Fields start at non-zero sentinels so a hook that never
+/// ran cannot pass for one that saw a cleared slot.
+contract ObservingRecipient {
+    Money public money;
+    uint256 public timesPaid;
+    uint256 public seenQueuedAmount = type(uint256).max;
+    uint256 public seenQueuedExecuteTime = type(uint256).max;
+    address public seenQueuedRecipient = address(0xDEAD);
+    uint256 public seenStatusQueuedAmount = type(uint256).max;
+
+    constructor(Money m) {
+        money = m;
+    }
+
+    receive() external payable {
+        timesPaid += 1;
+        seenQueuedAmount = money.queuedAmount();
+        seenQueuedExecuteTime = money.queuedExecuteTime();
+        seenQueuedRecipient = money.queuedRecipient();
+        (, , , , seenStatusQueuedAmount, , , , ) = money.contractStatus();
+    }
+}
+
 contract MoneySecurityTest is Test {
     Money money;
     address owner = address(0xABCD);
@@ -264,6 +288,28 @@ contract MoneySecurityTest is Test {
         assertEq(address(money).balance, 4 ether);
         assertEq(money.queuedAmount(), 0);
         assertEq(money.queuedRecipient(), address(0));
+    }
+
+    /// Checks-effects-interactions (SECURITY.md F-1): by the time the recipient is paid the queued
+    /// slot is already cleared, so code running in the recipient never sees a withdrawal that has
+    /// been paid and is still queued. Fails if the state is cleared after the external call.
+    function testExecuteWithdrawalClearsQueueBeforePayingRecipient() public {
+        vm.deal(address(money), 5 ether);
+        ObservingRecipient observer = new ObservingRecipient(money);
+        uint256 amount = 1 ether;
+
+        vm.prank(owner);
+        money.queueWithdrawalTo(address(observer), amount);
+        vm.warp(block.timestamp + money.TIMELOCK());
+
+        money.executeWithdrawal();
+
+        assertEq(observer.timesPaid(), 1);
+        assertEq(address(observer).balance, amount);
+        assertEq(observer.seenQueuedAmount(), 0);
+        assertEq(observer.seenQueuedExecuteTime(), 0);
+        assertEq(observer.seenQueuedRecipient(), address(0));
+        assertEq(observer.seenStatusQueuedAmount(), 0);
     }
 
     function testQueueWithdrawalRejectsMoreThanBalance() public {
