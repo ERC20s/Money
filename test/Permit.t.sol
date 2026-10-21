@@ -2,86 +2,102 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/draft-ERC20Permit.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../contracts/Money.sol";
 
 contract PermitTest is Test {
-    using ECDSA for bytes32;
+    bytes32 constant PERMIT_TYPEHASH =
+        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
     Money money;
     address owner = address(0xABCD);
-    address alice = address(0xBEEF);
+    // alice's address is derived from the key that signs for her, so a permit signed with
+    // alicePk is valid for alice and nothing else
+    address alice;
+    uint256 alicePk;
 
     function setUp() public {
+        (alice, alicePk) = makeAddrAndKey("alice");
+
         vm.prank(owner);
         money = new Money();
 
         // give alice some tokens to test transferFrom after permit
+        uint256 amount = 1000 * (10 ** money.decimals());
         vm.prank(owner);
-        money.ownerMint(alice, 1000 * (10 ** money.decimals()));
+        money.ownerMint(alice, amount);
     }
 
-    // Construct an EIP-2612 permit and apply it, then check allowance and transferFrom
+    function _digest(address holder, address spender, uint256 value, uint256 nonce, uint256 deadline)
+        internal
+        view
+        returns (bytes32)
+    {
+        bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, holder, spender, value, nonce, deadline));
+        return keccak256(abi.encodePacked("\x19\x01", money.DOMAIN_SEPARATOR(), structHash));
+    }
+
+    // Construct an EIP-2612 permit and apply it, then check allowance, nonce and transferFrom
     function testPermitAllowsTransferFrom() public {
         uint256 nonce = money.nonces(alice);
         uint256 deadline = block.timestamp + 1 hours;
         uint256 value = 500 * (10 ** money.decimals());
 
-        // Build the digest per EIP-712
-        bytes32 structHash = keccak256(abi.encode(
-            keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"),
-            alice,
-            address(this),
-            value,
-            nonce,
-            deadline
-        ));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, _digest(alice, address(this), value, nonce, deadline));
 
-        bytes32 domainSeparator = money.DOMAIN_SEPARATOR();
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-
-        // Sign the digest with alice's private key; in Foundry tests we can derive a key for an address
-        uint256 pk = uint256(keccak256(abi.encodePacked(alice)));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
-
-        // call permit as any caller
+        // anyone may submit the permit; it reverts unless alicePk signed it
         money.permit(alice, address(this), value, deadline, v, r, s);
 
-        // allowance should be set and transferFrom should succeed
         assertEq(money.allowance(alice, address(this)), value);
+        assertEq(money.nonces(alice), nonce + 1);
 
-        // perform transferFrom from alice to this contract
-        vm.prank(alice);
-        money.transferFrom(alice, address(this), value);
+        // this contract is the spender, so it pulls alice's tokens with the allowance
+        uint256 aliceBefore = money.balanceOf(alice);
+        assertTrue(money.transferFrom(alice, address(this), value));
 
         assertEq(money.balanceOf(address(this)), value);
+        assertEq(money.balanceOf(alice), aliceBefore - value);
+        assertEq(money.allowance(alice, address(this)), 0);
     }
 
-    // Invalid signature should revert
+    // A permit for alice signed with any other key must revert and leave no allowance
     function testPermitRejectsInvalidSignature() public {
         uint256 nonce = money.nonces(alice);
         uint256 deadline = block.timestamp + 1 hours;
         uint256 value = 1 * (10 ** money.decimals());
 
-        bytes32 structHash = keccak256(abi.encode(
-            keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"),
-            alice,
-            address(this),
-            value,
-            nonce,
-            deadline
-        ));
+        (, uint256 otherPk) = makeAddrAndKey("mallory");
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(otherPk, _digest(alice, address(this), value, nonce, deadline));
 
-        bytes32 domainSeparator = money.DOMAIN_SEPARATOR();
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+        vm.expectRevert(bytes("ERC20Permit: invalid signature"));
+        money.permit(alice, address(this), value, deadline, v, r, s);
 
-        // sign with a different key
-        uint256 pk = uint256(keccak256(abi.encodePacked(address(0xDEAD))));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
+        assertEq(money.allowance(alice, address(this)), 0);
+        assertEq(money.nonces(alice), nonce);
+    }
 
-        vm.expectRevert();
+    // A correctly signed permit is still rejected once its deadline has passed
+    function testPermitRejectsExpiredDeadline() public {
+        uint256 nonce = money.nonces(alice);
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 value = 1 * (10 ** money.decimals());
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, _digest(alice, address(this), value, nonce, deadline));
+
+        vm.warp(deadline + 1);
+        vm.expectRevert(bytes("ERC20Permit: expired deadline"));
+        money.permit(alice, address(this), value, deadline, v, r, s);
+    }
+
+    // A signature cannot be replayed: the nonce it was signed over is consumed by the first use
+    function testPermitCannotBeReplayed() public {
+        uint256 nonce = money.nonces(alice);
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 value = 1 * (10 ** money.decimals());
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, _digest(alice, address(this), value, nonce, deadline));
+        money.permit(alice, address(this), value, deadline, v, r, s);
+
+        vm.expectRevert(bytes("ERC20Permit: invalid signature"));
         money.permit(alice, address(this), value, deadline, v, r, s);
     }
 }
