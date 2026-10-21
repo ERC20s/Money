@@ -1,0 +1,5 @@
+{
+  "detectors_to_exclude": "pragma,solc-version,timestamp",
+  "exclude_dependencies": true,
+  "filter_paths": "lib/,test/"
+}

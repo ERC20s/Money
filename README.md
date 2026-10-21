@@ -30,6 +30,9 @@ Layout and pinning:
   OpenZeppelin **v4, not v5**: v5 moved `Pausable` to `utils/` and gave `Ownable` an
   `initialOwner` constructor argument, either of which breaks `contracts/Money.sol`.
 - `lib/`, `out/` and `cache/` are ignored; dependencies are fetched, not committed.
+- `slither.config.json` — configuration for [Slither](https://github.com/crytic/slither), which CI runs
+  on every push (`pip3 install slither-analyzer && slither .` locally). Findings and their triage are in
+  `SECURITY.md`.
 
 The `.d8a` `run:` block declares one entry, `"test": "forge test -vvv"`, so the Server tab and the
 VS Code ▶ button launch the suite. This repository serves no site, so `url:` stays unset and no

@@ -27,3 +27,24 @@ jobs:
       # The `test` entry of the .d8a run: block
       - name: forge test -vvv
         run: forge test -vvv
+
+  slither:
+    name: slither
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pinned dependencies (forge-std v1.9.4, OpenZeppelin v4.9.6)
+        run: ./scripts/install-deps.sh
+
+      # Static analysis of contracts/. Every finding is either fixed or triaged in
+      # SECURITY.md (excluded detectors live in slither.config.json, line-level
+      # exclusions are `slither-disable-next-line` comments in the source).
+      # fail-on: all means any untriaged finding, of any severity, fails the job.
+      - name: slither .
+        uses: crytic/slither-action@v0.4.2
+        with:
+          target: .
+          solc-version: "0.8.20"
+          slither-config: slither.config.json
+          fail-on: all
