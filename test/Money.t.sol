@@ -49,6 +49,18 @@ contract MoneyTest is Test {
     address owner = address(0xABCD);
     address alice = address(0xBEEF);
 
+    // Mirrors of Money's events for vm.expectEmit. `emit Money.Deposit(...)` (qualified access to
+    // another contract's event) needs solc >= 0.8.21; the project pins 0.8.20.
+    event Deposit(address indexed from, uint256 amount);
+    event ERC20Rescued(address indexed token, address indexed to, uint256 amount);
+    event RateChanged(uint256 newRate);
+    event Minted(address indexed to, uint256 amount);
+
+    // Revert reasons of the pinned OpenZeppelin v4.9.6 modules Money inherits.
+    bytes constant NOT_OWNER = bytes("Ownable: caller is not the owner");
+    bytes constant NOT_PENDING_OWNER = bytes("Ownable2Step: caller is not the new owner");
+    bytes constant PAUSED = bytes("Pausable: paused");
+
     function setUp() public {
         vm.prank(owner);
         money = new Money();
@@ -67,7 +79,7 @@ contract MoneyTest is Test {
 
         // We expect the Deposit event with sender and amount to be emitted
         vm.expectEmit(true, false, false, true);
-        emit Money.Deposit(alice, amount);
+        emit Deposit(alice, amount);
 
         vm.prank(alice);
         payable(address(money)).transfer(amount);
@@ -216,9 +228,8 @@ contract MoneyTest is Test {
         SimpleERC20 token = new SimpleERC20("TKN", "TKN");
         token.mint(address(money), 1000);
 
-        vm.prank(owner);
         vm.expectEmit(true, true, false, true);
-        emit Money.ERC20Rescued(address(token), owner, 1000);
+        emit ERC20Rescued(address(token), owner, 1000);
         vm.prank(owner);
         money.rescueERC20(token, owner, 1000);
 
@@ -236,9 +247,8 @@ contract MoneyTest is Test {
         NonStandardERC20 token = new NonStandardERC20();
         token.mint(address(money), 500);
 
-        vm.prank(owner);
         vm.expectEmit(true, true, false, true);
-        emit Money.ERC20Rescued(address(token), owner, 500);
+        emit ERC20Rescued(address(token), owner, 500);
         vm.prank(owner);
         money.rescueERC20(IERC20(address(token)), owner, 500);
 
@@ -252,14 +262,14 @@ contract MoneyTest is Test {
         token.mint(address(money), 1000);
 
         vm.prank(owner);
-        vm.expectRevert();
+        vm.expectRevert(bytes("Rescue to zero disabled"));
         money.rescueERC20(token, address(0), 1000);
     }
 
     // New: only owner can queue the enable; non-owner attempt should revert and not set queued time
     function testQueueEnableRescueOnlyOwnerAndStateUnchangedOnRevert() public {
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(NOT_OWNER);
         money.queueEnableRescueToZero();
 
         assertEq(money.queuedRescueToZeroExecuteTime(), 0);
@@ -324,7 +334,7 @@ contract MoneyTest is Test {
 
         // non-owner cannot set rate
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(NOT_OWNER);
         money.setRate(rate);
 
         // buy reverts while rate == 0
@@ -346,16 +356,19 @@ contract MoneyTest is Test {
     // New test per approved proposal #157: assert setRate emits RateChanged and enforces MAX_RATE
     function testSetRateEnforcesMaxAndEmitsEvent() public {
         // owner sets rate to MAX_RATE and we expect RateChanged to be emitted
-        vm.prank(owner);
+        // read MAX_RATE up front: an external call between vm.prank / vm.expectEmit and the
+        // call under test would consume the prank and be checked for the event instead
+        uint256 maxRate = money.MAX_RATE();
         vm.expectEmit(true, false, false, true);
-        emit Money.RateChanged(money.MAX_RATE());
+        emit RateChanged(maxRate);
         vm.prank(owner);
-        money.setRate(money.MAX_RATE());
+        money.setRate(maxRate);
+        assertEq(money.rate(), maxRate);
 
         // values above MAX_RATE must revert
         vm.prank(owner);
-        vm.expectRevert();
-        money.setRate(money.MAX_RATE() + 1);
+        vm.expectRevert(bytes("Rate out of range"));
+        money.setRate(maxRate + 1);
     }
 
     // New tests for previewWeiForTokens added per proposal #129
@@ -440,7 +453,7 @@ contract MoneyTest is Test {
 
         // non-owner cannot call ownerMint
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(NOT_OWNER);
         money.ownerMint(alice, amount);
 
         // zero recipient rejected
@@ -454,9 +467,8 @@ contract MoneyTest is Test {
         money.ownerMint(alice, 0);
 
         // owner may mint to alice
-        vm.prank(owner);
         vm.expectEmit(true, true, false, true);
-        emit Money.Minted(alice, amount);
+        emit Minted(alice, amount);
         vm.prank(owner);
         money.ownerMint(alice, amount);
 
@@ -528,16 +540,16 @@ contract MoneyTest is Test {
 
         // while paused, buy should revert for a buyer
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(PAUSED);
         money.buy{value: sendWei}();
 
         // while paused, owner queueWithdrawal and queueWithdrawalTo should revert
         vm.prank(owner);
-        vm.expectRevert();
+        vm.expectRevert(PAUSED);
         money.queueWithdrawal(1 ether);
 
         vm.prank(owner);
-        vm.expectRevert();
+        vm.expectRevert(PAUSED);
         money.queueWithdrawalTo(alice, 1 ether);
 
         // owner unpauses
@@ -606,7 +618,7 @@ contract MoneyTest is Test {
 
         // owner rescue should revert while paused
         vm.prank(owner);
-        vm.expectRevert();
+        vm.expectRevert(PAUSED);
         money.rescueERC20(IERC20(address(token)), owner, 1000);
     }
 
@@ -624,7 +636,7 @@ contract MoneyTest is Test {
         money.pause();
 
         // execute should revert while paused
-        vm.expectRevert();
+        vm.expectRevert(PAUSED);
         money.executeEnableRescueToZero();
 
         // cleanup: unpause and cancel the queued enable so test leaves no lingering state
@@ -647,15 +659,15 @@ contract MoneyTest is Test {
 
         // nominee must NOT be able to call owner-only functions yet
         vm.prank(nominee);
-        vm.expectRevert();
+        vm.expectRevert(NOT_OWNER);
         money.setRate(1);
 
         vm.prank(nominee);
-        vm.expectRevert();
+        vm.expectRevert(NOT_OWNER);
         money.queueWithdrawal(1 ether);
 
         vm.prank(nominee);
-        vm.expectRevert();
+        vm.expectRevert(NOT_OWNER);
         money.pause();
 
         // current owner retains owner powers
@@ -689,7 +701,7 @@ contract MoneyTest is Test {
 
         // previous owner has lost owner privileges
         vm.prank(owner);
-        vm.expectRevert();
+        vm.expectRevert(NOT_OWNER);
         money.setRate(4);
 
         // cleanup: new owner unpauses
@@ -711,7 +723,7 @@ contract MoneyTest is Test {
 
         // nominee cannot accept anymore
         vm.prank(nominee);
-        vm.expectRevert();
+        vm.expectRevert(NOT_PENDING_OWNER);
         money.acceptOwnership();
     }
 
@@ -730,7 +742,7 @@ contract MoneyTest is Test {
 
         // old nominee cannot accept
         vm.prank(nominee1);
-        vm.expectRevert();
+        vm.expectRevert(NOT_PENDING_OWNER);
         money.acceptOwnership();
 
         // new nominee can accept and becomes owner

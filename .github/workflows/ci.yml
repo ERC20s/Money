@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  foundry:
+    name: forge build + forge test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Install pinned dependencies (forge-std v1.9.4, OpenZeppelin v4.9.6)
+        run: ./scripts/install-deps.sh
+
+      - name: forge build
+        run: forge build
+
+      # The `test` entry of the .d8a run: block
+      - name: forge test -vvv
+        run: forge test -vvv
