@@ -93,27 +93,10 @@ contract Money is ERC20, ERC20Permit, Pausable, Ownable2Step, ReentrancyGuard {
     }
 
     /// @dev Shared buy body. Both external entry points carry whenNotPaused and nonReentrant,
-    /// so the guard is entered exactly once per call.
+    /// so the guard is entered exactly once per call. Delegates to _buyTo so that every
+    /// purchase, whoever receives the tokens, runs through a single pricing path.
     function _buy(uint256 minTokenAmount) private {
-        require(msg.value > 0, "Must send ETH to buy");
-        require(rate > 0, "Rate must be > 0");
-
-        // tokenAmount = msg.value (wei) * rate (tokens per ETH) * 10**decimals / 1 ether
-        uint256 tokenDecimalsFactor = 10 ** uint256(decimals());
-
-        // conservative guard against multiplication overflow when computing tokenAmount
-        // use MAX_RATE (constant) so division cannot divide-by-zero and bound is auditable
-        uint256 maxMsgValue = type(uint256).max / MAX_RATE / tokenDecimalsFactor;
-        require(msg.value <= maxMsgValue, "msg.value too large");
-
-        uint256 tokenAmount = (msg.value * rate * tokenDecimalsFactor) / 1 ether;
-
-        require(tokenAmount > 0, "Token amount zero after normalization");
-        // slippage guard: a rate cut between quote and execution can never shortchange the buyer
-        require(tokenAmount >= minTokenAmount, "Insufficient tokens out");
-
-        _mint(msg.sender, tokenAmount);
-        emit Bought(msg.sender, msg.value, tokenAmount, rate);
+        _buyTo(msg.sender, minTokenAmount);
     }
 
     /// @notice Buy tokens and credit a different recipient. Like buy(), but mints to `recipient`.
@@ -232,18 +215,21 @@ contract Money is ERC20, ERC20Permit, Pausable, Ownable2Step, ReentrancyGuard {
         uint256 amount = queuedAmount;
         address recipient = queuedRecipient;
 
-        // Perform the external call first (nonReentrant guards against reentrancy).
-        // Only clear the queued state once the transfer has actually succeeded, so a
-        // reverting/failing recipient leaves the queued withdrawal intact for the owner
-        // to inspect, retry, or cancel.
-        (bool ok, ) = payable(recipient).call{value: amount}("");
-        require(ok, "Transfer failed");
-
+        // Checks-effects-interactions: clear the queued entry and log the execution before the
+        // external call, so nothing the recipient re-enters (nonReentrant already blocks this
+        // function itself) can observe a half-executed withdrawal. A failing transfer makes the
+        // require below revert the whole transaction, which restores the queued entry untouched
+        // for the owner to inspect, retry, or cancel.
         queuedAmount = 0;
         queuedExecuteTime = 0;
         queuedRecipient = address(0);
-
         emit WithdrawalExecuted(amount, recipient);
+
+        // A low-level call forwards all gas so contract recipients are not broken by the 2300-gas
+        // stipend of transfer(); see SECURITY.md (slither: low-level-calls).
+        // slither-disable-next-line low-level-calls
+        (bool ok, ) = payable(recipient).call{value: amount}("");
+        require(ok, "Transfer failed");
     }
 
     /// @notice Cancel a queued withdrawal. Callable by owner even while paused to allow emergency retraction.
@@ -274,6 +260,8 @@ contract Money is ERC20, ERC20Permit, Pausable, Ownable2Step, ReentrancyGuard {
     /// @notice Return the number of seconds until the queued rescue-to-zero opt-in
     /// may be executed. Returns 0 if none is queued or if the timelock has already expired.
     function timeUntilQueuedRescueToZero() external view returns (uint256) {
+        // 0 is the "nothing queued" sentinel, not a timestamp; see SECURITY.md (slither: incorrect-equality).
+        // slither-disable-next-line incorrect-equality
         if (queuedRescueToZeroExecuteTime == 0) {
             return 0;
         }

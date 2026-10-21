@@ -9,9 +9,12 @@ ETH withdrawals, pause, two-step ownership and EIP-2612 permit (`contracts/Money
 ./scripts/install-deps.sh   # or: make install  — forge-std v1.9.4 + OpenZeppelin v4.9.6 (v4, never v5) into lib/
 forge build                 # or: make build    — solc 0.8.20, EVM paris
 forge test -vvv             # or: make test     — the `test` entry of the .d8a run: block
+pip3 install slither-analyzer && slither .   # static analysis; config in slither.config.json, triage in SECURITY.md
 ```
 
-CI (`.github/workflows/ci.yml`) runs exactly these three on every push and pull request.
+CI (`.github/workflows/ci.yml`) runs exactly these on every push and pull request: install, build and
+test in one job, slither (`crytic/slither-action`, `fail-on: all`) in another. A new slither finding must
+be fixed or triaged in `SECURITY.md` (and excluded in `slither.config.json` / `slither-disable-next-line`).
 If `forge` is missing: `mkdir -p ~/.foundry/bin && curl -L https://github.com/foundry-rs/foundry/releases/download/stable/foundry_stable_linux_amd64.tar.gz | tar -xz -C ~/.foundry/bin && export PATH=~/.foundry/bin:$PATH`.
 
 ## Ground rules
